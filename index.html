@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Second Brain</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%231d5bff'/><g fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' transform='translate(4 4) scale(.667)'><path d='m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z'/><path d='m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65'/><path d='m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65'/></g></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="login" class="login hidden">
+    <form class="login-card" id="loginForm">
+      <div class="login-brand" id="loginBrand"></div>
+      <div>
+        <h1 class="login-title">Accedi</h1>
+        <p class="muted">Inserisci le credenziali per aprire il tuo archivio.</p>
+      </div>
+      <label class="field"><span>Email</span><input type="email" id="loginEmail" required autocomplete="username"></label>
+      <label class="field"><span>Password</span><input type="password" id="loginPw" required autocomplete="current-password"></label>
+      <button class="btn primary block" type="submit">Accedi</button>
+      <p class="err" id="loginErr"></p>
+    </form>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside id="sidebar" class="sidebar"></aside>
+    <div class="backdrop" id="backdrop"></div>
+    <main id="main" class="main"></main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="lightbox" class="lightbox hidden"><img alt=""></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/store-local.js"></script>
+  <script src="js/store-supabase.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
