@@ -4,6 +4,6 @@
 // (Supabase > Project Settings > API). La anon key può stare in un repo pubblico:
 // i dati sono protetti dal login e dalle regole di accesso definite in supabase/schema.sql.
 window.SB_CONFIG = {
-  url: '',
-  anonKey: ''
+  url: 'https://nzggicbsokjuxbjazidp.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56Z2dpY2Jzb2tqdXhiamF6aWRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyMDY2NzUsImV4cCI6MjEwODc4MjY3NX0.mIewwMZGOKEJfrT1WYkElVdSp6jPd2cBlpi3Goef_sE'
 };
