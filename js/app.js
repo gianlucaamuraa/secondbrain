@@ -36,9 +36,15 @@ function dueState(n) {
   return { cls: 'future', label: `${wd} ${fmtDay(d)}` };
 }
 // prima quelle con scadenza (dalla più vicina), poi le altre per data di inserimento
-const sortTodos = list => list.sort((a, b) =>
-  (a.due_date && b.due_date ? a.due_date.localeCompare(b.due_date) : a.due_date ? -1 : b.due_date ? 1 : 0) ||
-  a.created_at.localeCompare(b.created_at));
+// a parità di scadenza: ente e argomento in ordine alfabetico
+const cmpIt = (a, b) => a.localeCompare(b, 'it', { sensitivity: 'base', numeric: true });
+const placeOf = n => { const t = topicOf(n.topic_id); const e = t && entityOf(t.entity_id); return [e?.name || '', t?.title || '']; };
+const sortTodos = list => list.sort((a, b) => {
+  const byDue = a.due_date && b.due_date ? a.due_date.localeCompare(b.due_date) : a.due_date ? -1 : b.due_date ? 1 : 0;
+  if (byDue) return byDue;
+  const [ea, ta] = placeOf(a), [eb, tb] = placeOf(b);
+  return cmpIt(ea, eb) || cmpIt(ta, tb) || a.created_at.localeCompare(b.created_at);
+});
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const ls = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -249,7 +255,7 @@ function renderSidebar() {
         const open = r.eid === e.id;
         const tps = topicsOf(e.id);
         return `<div class="sb-entity ${open ? 'open' : ''}">
-          <a href="#/e/${e.id}" class="nav-item ${open && r.view === 'entity' ? 'active' : ''} ${open ? 'current' : ''}">
+          <a href="#/e/${e.id}" title="${esc(e.name)}" class="nav-item ${open && r.view === 'entity' ? 'active' : ''} ${open ? 'current' : ''}">
             ${icon('building')}<span class="ellipsis">${esc(e.name)}</span>${icon('chevron', 'chev')}</a>
           ${open ? `<div class="sb-topics">${tps.map(t => `<a href="#/e/${e.id}/t/${t.id}" class="sub-item ${r.tid === t.id ? 'active' : ''}"><span class="ellipsis">${esc(t.title)}</span>${todosOfTopic(t.id) ? '<span class="dot" title="Ci sono cose da fare"></span>' : ''}</a>`).join('') || '<span class="sub-empty">Nessun argomento</span>'}</div>` : ''}
         </div>`;
@@ -279,6 +285,34 @@ function renderSidebar() {
     createEntity(ev.target.querySelector('input').value);
   };
 }
+
+/* ---------- larghezza della barra laterale: si trascina il bordo destro ---------- */
+(() => {
+  const MIN = 200, MAX = 520, DEF = 264;
+  const root = document.documentElement;
+  const set = w => root.style.setProperty('--sb-w', `${Math.round(w)}px`);
+  const saved = Number(ls.get('sb-width'));
+  if (saved >= MIN && saved <= MAX) set(saved);
+  const handle = $('#sbResizer');
+  handle.addEventListener('pointerdown', ev => {
+    ev.preventDefault();
+    handle.setPointerCapture(ev.pointerId);
+    document.body.classList.add('resizing');
+    const move = e => set(Math.min(MAX, Math.max(MIN, e.clientX)));
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      document.body.classList.remove('resizing');
+      ls.set('sb-width', String(parseInt(root.style.getPropertyValue('--sb-w'), 10) || DEF));
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+  // doppio clic: torna alla larghezza iniziale
+  handle.addEventListener('dblclick', () => { root.style.removeProperty('--sb-w'); ls.set('sb-width', ''); });
+})();
 
 const openDrawer = () => document.body.classList.add('drawer-open');
 const closeDrawer = () => document.body.classList.remove('drawer-open');
@@ -836,7 +870,7 @@ const VIEWS = {
         <section class="panel day-panel" id="dayPanel"></section>
       </div></div>`;
 
-    const items = await store.listDue(start, end);
+    const items = sortTodos(await store.listDue(start, end));
     if (S.route !== r) return;
     const byDay = new Map();
     for (const n of items) {
