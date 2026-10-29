@@ -92,7 +92,14 @@ const ICONS = {
   database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
   notes: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
   activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
-  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>'
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  userPlus: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+  at: '<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>',
+  swap: '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>',
+  move: '<path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H2"/><path d="m8 16 3-3-3-3"/><path d="M2 16v-1a2 2 0 0 1 2-2h6"/>',
+  mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>'
 };
 const icon = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 const brand = `<span class="logo">${icon('logo')}</span><span class="brand-name">Second Brain</span>`;
@@ -137,6 +144,33 @@ function dialog({ title, text = '', input = null, okText = 'Salva', danger = fal
 const askText = (title, value, okText = 'Salva', placeholder = '') => dialog({ title, input: { value, placeholder }, okText });
 const askConfirm = (title, text, okText = 'Elimina') => dialog({ title, text, okText, danger: true });
 
+// scelta tra alcune opzioni (es. lo spazio in cui spostare un ente)
+function askChoice(title, text, options, okText = 'Conferma') {
+  return new Promise(resolve => {
+    const wrap = h(`<div class="modal-back">
+      <form class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="modal-head"><span class="tile sm blue">${icon('move')}</span><h3>${esc(title)}</h3></div>
+        ${text ? `<p class="modal-text">${esc(text)}</p>` : ''}
+        <div class="choice-list">${options.map((o, i) => `<label class="choice">
+          <input type="radio" name="c" value="${esc(o.value)}" ${i ? '' : 'checked'}>
+          <span><strong>${esc(o.label)}</strong>${o.sub ? `<small>${esc(o.sub)}</small>` : ''}</span></label>`).join('')}</div>
+        <div class="modal-actions">
+          <button type="button" class="btn" data-m="cancel">Annulla</button>
+          <button type="submit" class="btn primary">${esc(okText)}</button>
+        </div>
+      </form>
+    </div>`);
+    document.body.append(wrap);
+    const close = v => { wrap.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(null); } };
+    document.addEventListener('keydown', onKey, true);
+    wrap.querySelector('form').onsubmit = ev => { ev.preventDefault(); close(wrap.querySelector('input:checked')?.value || null); };
+    wrap.querySelector('[data-m="cancel"]').onclick = () => close(null);
+    wrap.addEventListener('mousedown', ev => { if (ev.target === wrap) close(null); });
+    setTimeout(() => wrap.querySelector('input:checked')?.focus(), 0);
+  });
+}
+
 let toastTimer;
 function toast(msg, type = '') {
   const t = $('#toast');
@@ -157,16 +191,62 @@ function loadScript(src) {
 
 /* ---------- stato ---------- */
 let store;
-const S = { entities: [], topics: [], todos: [], route: null };
+// S.todos e S.myMentions contengono solo lo spazio di lavoro corrente; S.allTodos tutti gli spazi.
+const S = { workspaces: [], members: [], profiles: [], entities: [], topics: [], allTodos: [], todos: [], mentionsAll: [], myMentions: [], wsId: null, route: null };
 const main = $('#main');
 
 async function reloadAll() {
-  [S.entities, S.topics, S.todos] = await Promise.all([store.listEntities(), store.listTopics(), store.openTodos()]);
+  [S.workspaces, S.members, S.profiles, S.entities, S.topics, S.allTodos] = await Promise.all([
+    store.listWorkspaces(), store.listMembers(), store.listProfiles(),
+    store.listEntities(), store.listTopics(), store.openTodos()
+  ]);
   S.entities.sort(byName('name'));
   S.topics.sort(byName('title'));
-  sortTodos(S.todos);
+  S.workspaces.sort((a, b) => (b.personal - a.personal) || cmpIt(a.name, b.name));
+  S.mentionsAll = await store.listMentions(myMemberIds());
+  if (!wsById(S.wsId)) setWs(ls.get('sb-ws'));
+  applyWs();
 }
-async function reloadTodos() { S.todos = sortTodos(await store.openTodos()); renderSidebar(); }
+async function reloadTodos() {
+  [S.allTodos, S.mentionsAll] = await Promise.all([store.openTodos(), store.listMentions(myMemberIds())]);
+  applyWs();
+  renderSidebar();
+}
+/* ---------- spazi di lavoro e persone ---------- */
+const wsById = id => S.workspaces.find(w => w.id === id);
+const curWs = () => wsById(S.wsId);
+function setWs(id) {
+  const w = wsById(id) || S.workspaces.find(x => x.personal) || S.workspaces[0];
+  S.wsId = w?.id || null;
+  ls.set('sb-ws', S.wsId || '');
+}
+const wsOfNote = n => n.workspace_id || entityOf(topicOf(n.topic_id)?.entity_id)?.workspace_id;
+function applyWs() {
+  S.todos = sortTodos(S.allTodos.filter(n => wsOfNote(n) === S.wsId));
+  S.myMentions = S.mentionsAll.filter(n => n.todo && !n.done);
+}
+const wsLabel = w => w ? (w.personal ? 'Personale' : w.name) : '';
+const profileOf = uid => S.profiles.find(p => p.id === uid);
+const memberById = id => S.members.find(m => m.id === id);
+const memberName = m => !m ? 'Persona rimossa'
+  : (m.user_id && m.user_id === store.uid && store.mode === 'local') ? 'Io'
+  : (m.user_id && profileOf(m.user_id)?.name) || m.name || m.email || 'Senza nome';
+// prima tu, poi gli altri in ordine alfabetico
+const membersOf = wsId => S.members.filter(m => m.workspace_id === wsId)
+  .sort((a, b) => ((b.user_id === store.uid) - (a.user_id === store.uid)) || cmpIt(memberName(a), memberName(b)));
+const myMemberIds = () => S.members.filter(m => m.user_id && m.user_id === store.uid).map(m => m.id);
+const isOwner = wsId => S.members.some(m => m.workspace_id === wsId && m.user_id === store.uid && m.role === 'owner');
+const accountsOf = wsId => S.members.filter(m => m.workspace_id === wsId && m.user_id);
+// nome dell'autore di una nota (o argomento): profilo, poi nome dato nello spazio, poi email
+const authorName = (uid, wsId) => {
+  if (!uid) return '';
+  if (uid === store.uid) return 'Tu';
+  const m = S.members.find(x => x.user_id === uid && x.workspace_id === wsId) || S.members.find(x => x.user_id === uid);
+  return (profileOf(uid)?.name) || m?.name || m?.email || profileOf(uid)?.email || 'Utente';
+};
+const initialsOf = s => String(s || '?').trim().split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+const wsEntities = () => S.entities.filter(e => e.workspace_id === S.wsId);
+const wsTopics = () => S.topics.filter(t => entityOf(t.entity_id)?.workspace_id === S.wsId);
 const overdueCount = () => { const t = todayKey(); return S.todos.filter(n => n.due_date && n.due_date < t).length; };
 const entityOf = id => S.entities.find(e => e.id === id);
 const topicOf = id => S.topics.find(t => t.id === id);
@@ -195,14 +275,37 @@ function showLogin() {
   $('#loginBrand').innerHTML = brand;
   $('#login').classList.remove('hidden');
   $('#app').classList.add('hidden');
+  let signup = false;
+  const setMode = on => {
+    signup = on;
+    $('#loginTitle').textContent = on ? 'Primo accesso' : 'Accedi';
+    $('#loginSub').textContent = on
+      ? 'Sei stato invitato? Usa l’email dell’invito e scegli una password (almeno 6 caratteri).'
+      : 'Inserisci le credenziali per aprire il tuo archivio.';
+    $('#loginSubmit').textContent = on ? 'Crea la password ed entra' : 'Accedi';
+    $('#loginSwitch').textContent = on ? 'Hai già un account? Accedi' : 'Primo accesso? Crea la tua password';
+    $('#loginPw').autocomplete = on ? 'new-password' : 'current-password';
+    $('#loginErr').textContent = ''; $('#loginOk').textContent = '';
+  };
+  $('#loginSwitch').onclick = () => setMode(!signup);
   $('#loginForm').onsubmit = async ev => {
     ev.preventDefault();
-    $('#loginErr').textContent = '';
+    $('#loginErr').textContent = ''; $('#loginOk').textContent = '';
+    const email = $('#loginEmail').value.trim(), pw = $('#loginPw').value;
     try {
-      await store.login($('#loginEmail').value.trim(), $('#loginPw').value);
+      if (signup) {
+        const { needsConfirm } = await store.signUp(email, pw);
+        if (needsConfirm) {
+          setMode(false);
+          $('#loginOk').textContent = 'Ti abbiamo inviato un’email: clicca il link di conferma, poi accedi qui.';
+          return;
+        }
+      } else {
+        await store.login(email, pw);
+      }
       $('#login').classList.add('hidden');
       await start();
-    } catch (e) { $('#loginErr').textContent = 'Accesso non riuscito: ' + (e.message || e); }
+    } catch (e) { $('#loginErr').textContent = (signup ? 'Registrazione non riuscita: ' : 'Accesso non riuscito: ') + (e.message || e); }
   };
 }
 
@@ -210,6 +313,13 @@ async function start() {
   $('#app').classList.remove('hidden');
   await reloadAll();
   window.addEventListener('hashchange', render);
+  // quando torni sulla pagina, aggiorna con le modifiche fatte dagli altri
+  let lastLoad = Date.now();
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible' || Date.now() - lastLoad < 30000) return;
+    lastLoad = Date.now();
+    try { await reloadAll(); renderSidebar(); } catch { /* ignora */ }
+  });
   render();
 }
 
@@ -223,6 +333,8 @@ function parseRoute() {
   if (p[0] === 'todo') return { view: 'todo', params };
   if (p[0] === 'calendar') return { view: 'calendar', params };
   if (p[0] === 'search') return { view: 'search', params };
+  if (p[0] === 'mentions') return { view: 'mentions', params };
+  if (p[0] === 'people') return { view: 'people', params };
   return { view: 'home', params };
 }
 
@@ -230,6 +342,10 @@ async function render() {
   const r = parseRoute();
   S.route = r;
   S.onNoteUpdated = null;
+  $$('.mention-box').forEach(x => x.remove());
+  // un link a un ente di un altro spazio apre quello spazio
+  const ent = r.eid && entityOf(r.eid);
+  if (ent && ent.workspace_id !== S.wsId) { setWs(ent.workspace_id); applyWs(); }
   renderSidebar();
   closeDrawer();
   try { await VIEWS[r.view](r); } catch (e) { toastErr(e); }
@@ -240,18 +356,40 @@ function renderSidebar() {
   const r = S.route || {};
   const sb = $('#sidebar');
   const email = store.email || '';
-  const initials = email ? email.slice(0, 2).toUpperCase() : 'SB';
+  const myName = profileOf(store.uid)?.name || '';
+  const initials = initialsOf(myName || email);
+  const ws = curWs();
+  const people = ws ? membersOf(ws.id).length : 0;
   sb.innerHTML = `
     <div class="sb-head"><a href="#/" class="brand">${brand}</a></div>
+    <div class="ws-wrap menu-wrap">
+      <button class="ws-btn" data-act="ws-menu" title="Cambia spazio di lavoro">
+        <span class="ws-tile ${ws?.personal ? '' : tintOf(ws?.name || '')}">${icon(ws?.personal ? 'user' : 'users')}</span>
+        <span class="ws-info"><strong class="ellipsis">${esc(wsLabel(ws))}</strong>
+          <span class="ellipsis">${ws?.personal ? 'Spazio personale' : `Condiviso · ${plural(people, 'persona', 'persone')}`}</span></span>
+        ${icon('swap', 'ws-swap')}
+      </button>
+      <div class="menu ws-menu" role="menu">
+        <div class="menu-head">Spazi di lavoro</div>
+        ${S.workspaces.map(w => `<button class="menu-item ${w.id === S.wsId ? 'on' : ''}" data-act="ws-switch" data-ws="${w.id}">
+          <span class="tile sm ${w.personal ? 'blue' : tintOf(w.name)}">${icon(w.personal ? 'user' : 'users')}</span>
+          <span><strong>${esc(wsLabel(w))}</strong><small>${w.personal ? 'Solo tuo' : plural(membersOf(w.id).length, 'persona', 'persone')}</small></span>
+          ${w.id === S.wsId ? icon('check', 'menu-check') : ''}</button>`).join('')}
+        <div class="menu-sep"></div>
+        <button class="menu-item" data-act="ws-new"><span class="tile sm green">${icon('plus')}</span><span><strong>Nuovo spazio condiviso</strong><small>Per lavorare insieme ad altri</small></span></button>
+      </div>
+    </div>
     <nav class="sb-nav">
       <a href="#/" class="nav-item ${r.view === 'home' ? 'active' : ''}">${icon('dashboard')}<span>Dashboard</span></a>
       <a href="#/todo" class="nav-item ${r.view === 'todo' ? 'active' : ''}">${icon('todo')}<span>Da fare</span>${S.todos.length ? `<span class="badge ${overdueCount() ? 'red' : ''}" title="${overdueCount() ? overdueCount() + ' scadute' : ''}">${S.todos.length}</span>` : ''}</a>
       <a href="#/calendar" class="nav-item ${r.view === 'calendar' ? 'active' : ''}">${icon('calendar')}<span>Calendario</span></a>
+      <a href="#/mentions" class="nav-item ${r.view === 'mentions' ? 'active' : ''}">${icon('at')}<span>Menzioni</span>${S.myMentions.length ? `<span class="badge" title="Attività aperte in cui sei taggato">${S.myMentions.length}</span>` : ''}</a>
+      <a href="#/people" class="nav-item ${r.view === 'people' ? 'active' : ''}">${icon('users')}<span>Persone</span></a>
     </nav>
     <div class="sb-section"><span>Enti</span><button class="sb-add" id="sbNewEntity" title="Nuovo ente">${icon('plus')}</button></div>
     <form class="sb-new hidden" id="sbNewForm"><input placeholder="Nome ente e Invio" required></form>
     <div class="sb-entities">
-      ${S.entities.map(e => {
+      ${wsEntities().map(e => {
         const open = r.eid === e.id;
         const tps = topicsOf(e.id);
         return `<div class="sb-entity ${open ? 'open' : ''}">
@@ -265,8 +403,8 @@ function renderSidebar() {
       <button class="nav-item" data-act="export">${icon('download')}<span>Esporta backup</span></button>
       ${store.mode === 'cloud' ? `
         <div class="user-card">
-          <span class="avatar">${esc(initials)}</span>
-          <span class="user-info"><strong>Il mio archivio</strong><span class="ellipsis">${esc(email)}</span></span>
+          <a class="avatar" href="#/people" title="Il tuo nome e le persone">${esc(initials)}</a>
+          <span class="user-info"><strong class="ellipsis">${esc(myName || 'Il mio archivio')}</strong><span class="ellipsis">${esc(email)}</span></span>
           <button class="sb-icon-btn" data-act="logout" title="Esci">${icon('logout')}</button>
         </div>` : `
         <div class="user-card local">
@@ -334,6 +472,12 @@ function topbar(title, sub = '', actions = '') {
   </header>`;
 }
 
+// clic su una persona taggata in una nota salvata: le sue menzioni
+document.addEventListener('click', ev => {
+  const m = ev.target.closest('.note-body .mention[data-mention]');
+  if (m && !m.closest('[contenteditable="true"]')) location.hash = `#/mentions?p=${m.dataset.mention}`;
+});
+
 document.addEventListener('submit', ev => {
   if (!ev.target.matches('[data-search]')) return;
   ev.preventDefault();
@@ -346,7 +490,7 @@ async function createEntity(name) {
   name = name.trim();
   if (!name) return;
   try {
-    const e = await store.createEntity(name);
+    const e = await store.createEntity(name, S.wsId);
     S.entities.push(e); S.entities.sort(byName('name'));
     location.hash = `#/e/${e.id}`;
   } catch (e) { toastErr(e); }
@@ -433,7 +577,38 @@ document.addEventListener('click', async ev => {
         toast('Backup scaricato: contiene i testi delle note, gli allegati restano nell’archivio'); break;
       }
       case 'logout': await store.logout(); location.reload(); break;
+      case 'ws-menu':
       case 'download-menu': el.closest('.menu-wrap').classList.toggle('open'); break;
+      case 'ws-switch': {
+        el.closest('.menu-wrap')?.classList.remove('open');
+        if (el.dataset.ws === S.wsId) return;
+        setWs(el.dataset.ws); applyWs();
+        if (location.hash === '#/' || location.hash === '') render(); else location.hash = '#/';
+        break;
+      }
+      case 'ws-new': {
+        el.closest('.menu-wrap')?.classList.remove('open');
+        const name = await askText('Nuovo spazio condiviso', '', 'Crea', 'es. Ufficio riscossione');
+        if (!name) return;
+        const w = await store.createWorkspace(name);
+        await reloadAll();
+        setWs(w.id); applyWs();
+        toast('Spazio creato: ora aggiungi le persone');
+        if (location.hash === '#/people') render(); else location.hash = '#/people';
+        break;
+      }
+      case 'move-entity': {
+        const others = S.workspaces.filter(w => w.id !== ent.workspace_id);
+        if (!others.length) return toast('Crea prima uno spazio condiviso dal menu in alto a sinistra');
+        const to = await askChoice(`Spostare "${ent.name}" in un altro spazio?`,
+          'Si spostano anche tutti i suoi argomenti e le note. Lo vedranno le persone dello spazio scelto.',
+          others.map(w => ({ value: w.id, label: wsLabel(w), sub: w.personal ? 'Solo tuo' : plural(membersOf(w.id).length, 'persona', 'persone') })), 'Sposta');
+        if (!to) return;
+        await store.updateEntity(ent.id, { workspace_id: to });
+        await reloadAll();
+        toast(`Spostato in ${wsLabel(wsById(to))}`);
+        render(); break;
+      }
       case 'download-doc': {
         el.closest('.menu-wrap').classList.remove('open');
         await downloadDoc(el.dataset.scope, el.dataset.format);
@@ -480,7 +655,7 @@ function todoRow(n, { compact = false } = {}) {
     <input type="checkbox" class="todo-check" ${n.done ? 'checked' : ''} title="${n.done ? 'Riapri' : 'Segna come fatto'}">
     <div class="todo-main">
       <a href="#/e/${e.id}/t/${t.id}?n=${n.id}" class="todo-text">${esc(snippet(n.text, '', compact ? 90 : 220)) || '<em class="muted">(solo allegati)</em>'}</a>
-      <span class="todo-path"><span class="tdot ${tintOf(e.name)}"></span><span class="ellipsis">${esc(e.name)} / ${esc(t.title)}</span></span>
+      <span class="todo-path"><span class="tdot ${tintOf(e.name)}"></span><span class="ellipsis">${e.workspace_id !== S.wsId ? `${esc(wsLabel(wsById(e.workspace_id)))} · ` : ''}${esc(e.name)} / ${esc(t.title)}</span>${peopleTags(n)}</span>
     </div>
     ${dueControl(n)}
   </div>`;
@@ -499,6 +674,13 @@ document.addEventListener('change', async ev => {
   } catch (e) { ev.target.checked = !done; row.classList.toggle('is-done', !done); toastErr(e); }
 });
 
+// persone taggate in una nota, come piccole etichette
+function peopleTags(n) {
+  const ids = (n.mentions || []).filter(memberById);
+  if (!ids.length) return '';
+  return `<span class="ptags">${ids.slice(0, 3).map(id => `<span class="ptag" title="Taggato: ${esc(memberName(memberById(id)))}">@${esc(memberName(memberById(id)))}</span>`).join('')}${ids.length > 3 ? `<span class="ptag">+${ids.length - 3}</span>` : ''}</span>`;
+}
+
 /* ---------- viste ---------- */
 const actionBtns = kind => `
   <div class="menu-wrap">
@@ -511,6 +693,7 @@ const actionBtns = kind => `
         <span class="tile sm rose">${icon('file')}</span><span><strong>PDF</strong><small>Pronto da stampare o inviare</small></span></button>
     </div>
   </div>
+  ${kind === 'entity' && S.workspaces.length > 1 ? `<button class="icon-btn" data-act="move-entity" title="Sposta in un altro spazio">${icon('move')}</button>` : ''}
   <button class="icon-btn" data-act="rename-${kind}" title="Rinomina">${icon('edit')}</button>
   <button class="icon-btn danger" data-act="delete-${kind}" title="Elimina">${icon('trash')}</button>`;
 
@@ -524,13 +707,15 @@ const stat = (ic, tint, value, label, href) => `
 const VIEWS = {
   async home() {
     const lastAct = eid => topicsOf(eid).reduce((m, t) => (t.last_activity > m ? t.last_activity : m), '');
-    const recent = [...S.topics].sort(byActivity).slice(0, 6);
+    const recent = wsTopics().sort(byActivity).slice(0, 6);
     const upcoming = S.todos.filter(n => n.due_date).slice(0, 6);
-    main.innerHTML = `${topbar('Dashboard', today())}
+    main.innerHTML = `${topbar('Dashboard', `${esc(wsLabel(curWs()))} · ${today()}`)}
       <div class="page">
         <div class="stats">
           ${stat('todo', 'amber', S.todos.length, 'Attività da fare', '#/todo')}
           ${stat('alert', 'rose', overdueCount(), 'Attività scadute', '#/todo?f=over')}
+          ${stat('at', 'violet', S.myMentions.length, 'Attività in cui sei taggato', '#/mentions')}
+          ${stat('users', 'teal', membersOf(S.wsId).length, curWs()?.personal ? 'Persone da taggare' : 'Persone nello spazio', '#/people')}
         </div>
         <div class="dash-grid">
           <section class="panel">
@@ -540,7 +725,7 @@ const VIEWS = {
               <button class="btn primary">${icon('plus')}Crea ente</button>
             </form>
             <div class="cards">
-              ${S.entities.map(e => {
+              ${wsEntities().map(e => {
                 const n = topicsOf(e.id).length, todo = todosOfEntity(e.id), la = lastAct(e.id);
                 return `<a class="card" href="#/e/${e.id}">
                   <div class="card-top"><span class="tile ${tintOf(e.name)}">${icon('building')}</span>
@@ -612,10 +797,11 @@ const VIEWS = {
       <div class="feed" id="feed"><div class="feed-inner" id="feedInner"><p class="muted center">Caricamento…</p></div></div>
       <div class="composer"><div class="composer-card">
         <div class="editor" id="editor" contenteditable="true"
-          data-placeholder="Scrivi una nota. Invio salva, Shift+Invio va a capo (negli elenchi salva con Ctrl+Invio). Puoi incollare immagini e file."></div>
+          data-placeholder="Scrivi una nota. Invio salva, Shift+Invio va a capo (negli elenchi salva con Ctrl+Invio). Scrivi @ per taggare una persona. Puoi incollare immagini e file."></div>
         <div class="composer-bar">
           <button class="tool-btn" id="attachBtn" type="button" title="Allega file">${icon('clip')}<span>Allega</span></button>
           <input type="file" id="fileInput" multiple hidden>
+          <button class="tool-btn" id="mentionBtn" type="button" title="Tagga una persona (oppure scrivi @)">${icon('at')}<span>Tagga</span></button>
           <label class="tool-btn toggle" title="Segna la nota come cosa da fare"><input type="checkbox" id="todoToggle">${icon('todo')}<span>Da fare</span></label>
           <span class="due-pick hidden" id="duePick">
             <span class="date-field">${icon('calendar')}<input type="date" id="dueInput" title="Scadenza (facoltativa)"></span>
@@ -638,8 +824,10 @@ const VIEWS = {
     feed.addEventListener('scroll', () => { stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60; });
     new ResizeObserver(() => { if (stick) feed.scrollTop = feed.scrollHeight; }).observe(feedInner);
 
+    const people = () => membersOf(ent.workspace_id);
     const ed = setupEditor(editor, {
       onSubmit: submit,
+      people,
       onChange: () => {
         const { html, empty } = serializeEditor(editor);
         ls.set(draftKey, empty ? '' : html);
@@ -654,6 +842,7 @@ const VIEWS = {
     $('#attachBtn').onclick = () => $('#fileInput').click();
     $('#fileInput').onchange = ev => { ed.insertFiles([...ev.target.files]); ev.target.value = ''; editor.focus(); };
     $('#sendBtn').onclick = submit;
+    $('#mentionBtn').onclick = () => ed.startMention();
     const setTodoMode = on => {
       $('#todoToggle').checked = on;
       $('#todoToggle').closest('.toggle').classList.toggle('on', on);
@@ -692,13 +881,13 @@ const VIEWS = {
 
     async function submit() {
       if (ed.busy) return toast('Attendi la fine del caricamento');
-      const { html, text, empty: isEmpty } = serializeEditor(editor);
+      const { html, text, mentions, empty: isEmpty } = serializeEditor(editor);
       if (isEmpty) return;
       const todo = $('#todoToggle').checked;
       const due_date = todo ? $('#dueInput').value || null : null;
       $('#sendBtn').disabled = true;
       try {
-        const n = await store.createNote({ topic_id: tp.id, html, text, todo, due_date });
+        const n = await store.createNote({ topic_id: tp.id, html, text, todo, due_date, mentions });
         const used = pathsIn(html);
         const unused = [...ed.uploaded].filter(p => !used.includes(p));
         ed.uploaded.clear();
@@ -714,7 +903,7 @@ const VIEWS = {
         stick = true;
         await hydrate(el);
         feed.scrollTop = feed.scrollHeight;
-        if (todo) await reloadTodos();
+        if (todo || mentions.length) await reloadTodos();
       } catch (e) { toastErr(e); }
       finally { $('#sendBtn').disabled = false; editor.focus(); }
     }
@@ -778,7 +967,7 @@ const VIEWS = {
         <button class="btn" data-e="cancel" type="button">Annulla</button>
         <button class="btn primary" data-e="save" type="button">${icon('check')}Salva</button></div>`);
       art.append(bar);
-      const edx = setupEditor(body, { onSubmit: save, onEscape: cancel });
+      const edx = setupEditor(body, { onSubmit: save, onEscape: cancel, people });
       body.before(edx.toolbar);
       bar.querySelector('.hint').textContent = 'Invio salva (negli elenchi Ctrl+Invio), Esc annulla';
       body.focus(); placeCaretEnd(body);
@@ -788,15 +977,16 @@ const VIEWS = {
       });
       async function save() {
         if (edx.busy) return toast('Attendi la fine del caricamento');
-        const { html, text, empty: isEmpty } = serializeEditor(body);
+        const { html, text, mentions, empty: isEmpty } = serializeEditor(body);
         if (isEmpty) return toast('La nota è vuota: per toglierla usa Elimina');
         try {
-          const upd = await store.updateNote(n.id, { html, text, updated_at: new Date().toISOString() });
+          const upd = await store.updateNote(n.id, { html, text, mentions, updated_at: new Date().toISOString() });
           const keep = pathsIn(html);
           const removed = [...pathsIn(n.html), ...edx.uploaded].filter(p => !keep.includes(p));
           if (removed.length) store.deleteFiles(removed).catch(() => {});
           notesById.set(n.id, upd);
           replaceNote(art, upd);
+          if (String(n.mentions) !== String(mentions)) await reloadTodos();
         } catch (e) { toastErr(e); }
       }
       function cancel() {
@@ -870,7 +1060,7 @@ const VIEWS = {
         <section class="panel day-panel" id="dayPanel"></section>
       </div></div>`;
 
-    const items = sortTodos(await store.listDue(start, end));
+    const items = sortTodos((await store.listDue(start, end)).filter(n => wsOfNote(n) === S.wsId));
     if (S.route !== r) return;
     const byDay = new Map();
     for (const n of items) {
@@ -926,13 +1116,180 @@ const VIEWS = {
     showDay(selected);
   },
 
+  async people() {
+    const ws = curWs();
+    if (!ws) return notFound();
+    const owner = isOwner(ws.id), cloud = store.mode === 'cloud';
+    const canInvite = owner && cloud && !ws.personal;
+    const list = membersOf(ws.id);
+    const status = m => m.user_id
+      ? `${m.user_id === store.uid ? 'Tu · ' : ''}${m.role === 'owner' ? 'Proprietario' : 'Utente'}${cloud && profileOf(m.user_id)?.email ? ` · ${profileOf(m.user_id).email}` : m.email ? ` · ${m.email}` : ''}`
+      : m.email ? `Invito in attesa · ${m.email}` : 'Senza account · solo per i tag';
+    const myName = profileOf(store.uid)?.name || '';
+    main.innerHTML = `${topbar('Persone', `${esc(wsLabel(ws))} · ${plural(list.length, 'persona', 'persone')}`)}
+      <div class="page">
+        ${cloud ? `<section class="panel">
+          <div class="panel-head"><h2>Il tuo nome</h2></div>
+          <p class="muted small help">È il nome che vedono gli altri accanto alle tue note e quando ti taggano.</p>
+          <form class="inline-form" id="myName">
+            <input placeholder="Nome e cognome" value="${esc(myName)}" maxlength="80">
+            <button class="btn primary">${icon('check')}Salva</button>
+          </form>
+        </section>` : ''}
+        <section class="panel">
+          <div class="panel-head"><h2>Persone in ${esc(wsLabel(ws))}</h2>${ws.personal ? '' : `<span class="pill">${plural(accountsOf(ws.id).length, 'account', 'account')}</span>`}</div>
+          ${ws.personal ? `<p class="muted small help">Questo è il tuo spazio personale: nessun altro utente lo vede.
+            Qui puoi aggiungere persone <strong>senza account</strong>, solo per taggarle nelle note (utile se più persone usano la stessa utenza).
+            Per lavorare con altri utenti, ognuno con il suo accesso, crea uno spazio condiviso.</p>`
+            : `<p class="muted small help">Tutti gli utenti di questo spazio vedono e modificano gli stessi enti, argomenti e note.
+            Puoi invitare una persona con la sua email (avrà il suo accesso) oppure aggiungerla solo con il nome, per taggarla.</p>`}
+          ${owner ? `<form class="person-form" id="addPerson">
+            <input name="name" placeholder="Nome, es. Giorgio Rossi" maxlength="80">
+            ${canInvite ? '<input name="email" type="email" placeholder="Email (facoltativa: per dargli un accesso)">' : ''}
+            <button class="btn primary">${icon('userPlus')}Aggiungi</button>
+          </form>` : ''}
+          <div class="rows">${list.map(m => `<div class="row person" data-mid="${m.id}">
+            <span class="avatar-lg ${tintOf(m.id)}">${esc(initialsOf(memberName(m)))}</span>
+            <span class="row-main"><strong class="ellipsis">${esc(memberName(m))}</strong><span class="ellipsis muted">${esc(status(m))}</span></span>
+            <a class="btn sm" href="#/mentions?p=${m.id}" title="Note in cui è taggato">${icon('at')}<span class="btn-label">Menzioni</span></a>
+            ${owner && !m.user_id ? `<button class="icon-btn sm" data-pa="rename" title="Rinomina">${icon('edit')}</button>` : ''}
+            ${owner && m.user_id !== store.uid ? `<button class="icon-btn sm danger" data-pa="remove" title="Togli dallo spazio">${icon('trash')}</button>` : ''}
+            ${!owner && m.user_id === store.uid ? `<button class="btn sm" data-pa="leave">${icon('logout')}Esci dallo spazio</button>` : ''}
+          </div>`).join('')}</div>
+        </section>
+        ${owner && !ws.personal ? `<section class="panel">
+          <div class="panel-head"><h2>Spazio</h2></div>
+          <div class="ws-actions">
+            <button class="btn" id="wsRename">${icon('edit')}Rinomina spazio</button>
+            <button class="btn danger-line" id="wsDelete">${icon('trash')}Elimina spazio</button>
+          </div>
+        </section>` : ''}
+        ${ws.personal ? `<section class="panel">
+          <div class="panel-head"><h2>Lavorare con altri</h2></div>
+          <p class="muted small help">${cloud
+            ? 'Crea uno spazio condiviso e invita i colleghi con la loro email. Puoi anche spostarci un ente che hai già, con il pulsante “Sposta” nella pagina dell’ente.'
+            : 'In modalità locale i dati restano in questo browser: puoi creare altri spazi e aggiungere persone da taggare, ma non dare accesso ad altri utenti.'}</p>
+          <button class="btn primary" data-act="ws-new">${icon('plus')}Nuovo spazio condiviso</button>
+        </section>` : ''}
+      </div>`;
+
+    $('#myName')?.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      try {
+        const name = ev.target.querySelector('input').value.trim();
+        const upd = await store.updateProfile({ name });
+        const i = S.profiles.findIndex(p => p.id === store.uid);
+        if (i >= 0) S.profiles[i] = upd; else S.profiles.push(upd);
+        toast('Nome salvato'); render();
+      } catch (e) { toastErr(e); }
+    });
+    $('#addPerson')?.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const f = ev.target, name = $('[name="name"]', f).value.trim(), email = $('[name="email"]', f)?.value.trim().toLowerCase() || '';
+      if (!name && !email) return toast('Scrivi almeno il nome');
+      if (email && S.members.some(m => m.workspace_id === ws.id && (m.email || '').toLowerCase() === email)) return toast('Questa email è già nello spazio');
+      try {
+        const m = await store.addMember({ workspace_id: ws.id, name, email: email || null });
+        S.members.push(m);
+        render();
+        if (email) await dialog({
+          title: 'Invito pronto', okText: 'Ho capito',
+          text: `Comunica a ${name || email} di aprire Second Brain e scegliere “Primo accesso? Crea la tua password” usando l’email ${email}. Se ha già un account, basta che acceda: troverà lo spazio “${ws.name}”.`
+        });
+        else toast(`${name} aggiunto: ora puoi taggarlo con @`);
+      } catch (e) { toastErr(e); }
+    });
+    main.querySelector('.rows')?.addEventListener('click', async ev => {
+      const b = ev.target.closest('[data-pa]');
+      if (!b) return;
+      const m = memberById(b.closest('[data-mid]').dataset.mid);
+      try {
+        if (b.dataset.pa === 'rename') {
+          const name = await askText('Rinomina persona', m.name);
+          if (!name || name === m.name) return;
+          Object.assign(m, await store.updateMember(m.id, { name }));
+        } else if (b.dataset.pa === 'remove') {
+          if (!await askConfirm(`Togliere ${memberName(m)} dallo spazio?`, m.user_id
+            ? 'Non vedrà più gli enti e le note di questo spazio. Le note che ha scritto restano.'
+            : 'Le note in cui è taggato restano, ma il tag non sarà più collegato a una persona.', 'Togli')) return;
+          await store.removeMember(m.id);
+          S.members = S.members.filter(x => x.id !== m.id);
+        } else if (b.dataset.pa === 'leave') {
+          if (!await askConfirm(`Uscire da “${ws.name}”?`, 'Non vedrai più gli enti e le note di questo spazio. Per rientrare dovrà invitarti di nuovo il proprietario.', 'Esci')) return;
+          await store.removeMember(m.id);
+          await reloadAll(); setWs(null); applyWs();
+          location.hash = '#/'; return;
+        }
+        render();
+      } catch (e) { toastErr(e); }
+    });
+    $('#wsRename')?.addEventListener('click', async () => {
+      const name = await askText('Rinomina spazio', ws.name);
+      if (!name || name === ws.name) return;
+      try { Object.assign(ws, await store.updateWorkspace(ws.id, { name })); render(); } catch (e) { toastErr(e); }
+    });
+    $('#wsDelete')?.addEventListener('click', async () => {
+      if (!await askConfirm(`Eliminare lo spazio “${ws.name}”?`, 'Verranno eliminati per tutti gli enti, gli argomenti, le note e gli allegati di questo spazio. L’operazione non si può annullare.')) return;
+      try {
+        await store.deleteWorkspace(ws.id);
+        await reloadAll(); setWs(null); applyWs();
+        toast('Spazio eliminato');
+        location.hash = '#/';
+      } catch (e) { toastErr(e); }
+    });
+  },
+
+  async mentions(r) {
+    const pid = r.params.get('p');
+    const person = pid && memberById(pid);
+    const ids = person ? [person.id] : myMemberIds();
+    const who = person ? memberName(person) : 'te';
+    const others = membersOf(S.wsId).filter(m => !(m.user_id && m.user_id === store.uid));
+    main.innerHTML = `${topbar('Menzioni', person ? `Note in cui è taggato ${esc(who)}` : 'Note in cui sei taggato, in tutti gli spazi')}
+      <div class="page">
+        <div class="seg seg-wrap">
+          <a href="#/mentions" class="${person ? '' : 'on'}">${icon('user')}Io</a>
+          ${others.map(m => `<a href="#/mentions?p=${m.id}" class="${person?.id === m.id ? 'on' : ''}">${esc(memberName(m))}</a>`).join('')}
+          ${person && !others.includes(person) && !(person.user_id === store.uid) ? `<a class="on">${esc(memberName(person))}</a>` : ''}
+        </div>
+        <div id="mentionList"><p class="muted">Caricamento…</p></div>
+      </div>`;
+    const notes = await store.listMentions(ids);
+    if (S.route !== r) return;
+    const box = $('#mentionList');
+    if (!notes.length) {
+      box.innerHTML = `<section class="panel">${empty('at', 'Nessuna menzione', person
+        ? `Nessuna nota tagga ${esc(who)}. Nelle note scrivi @ e scegli la persona.`
+        : 'Quando qualcuno ti tagga con @ in una nota, la trovi qui.')}</section>`;
+      return;
+    }
+    const open = sortTodos(notes.filter(n => n.todo && !n.done));
+    const rest = notes.filter(n => !(n.todo && !n.done));
+    let html = '';
+    if (open.length) html += `<section class="panel bucket">
+      <div class="panel-head"><h2><span class="bdot amber"></span>Da fare</h2><span class="pill">${open.length}</span></div>
+      <div class="rows">${open.map(n => todoRow(n)).join('')}</div></section>`;
+    if (rest.length) html += `<section class="panel">
+      <div class="panel-head"><h2>Altre note</h2><span class="pill">${rest.length}</span></div>
+      <div class="rows">${rest.map(n => {
+        const t = topicOf(n.topic_id), e = t && entityOf(t.entity_id);
+        if (!t || !e) return '';
+        const by = n.user_id && accountsOf(n.workspace_id).length > 1 ? ` · ${esc(authorName(n.user_id, n.workspace_id))}` : '';
+        return `<a class="row" href="#/e/${e.id}/t/${t.id}?n=${n.id}">
+          <span class="tile sm ${tintOf(t.title)}">${icon(n.todo ? 'check' : 'notes')}</span>
+          <span class="row-main"><span class="muted small">${e.workspace_id !== S.wsId ? `${esc(wsLabel(wsById(e.workspace_id)))} · ` : ''}${esc(e.name)} / ${esc(t.title)} · ${fmtDate(n.created_at)}${by}</span>
+          <span class="row-text">${esc(snippet(n.text, '', 240)) || '<em class="muted">(solo allegati)</em>'}</span></span></a>`;
+      }).join('')}</div></section>`;
+    box.innerHTML = html;
+  },
+
   async search(r) {
     const q = (r.params.get('q') || '').trim();
-    main.innerHTML = `${topbar('Ricerca', `Risultati per “${esc(q)}”`)}<div class="page"><div id="res"><p class="muted">Ricerca in corso…</p></div></div>`;
+    main.innerHTML = `${topbar('Ricerca', `Risultati per “${esc(q)}” in ${esc(wsLabel(curWs()))}`)}<div class="page"><div id="res"><p class="muted">Ricerca in corso…</p></div></div>`;
     const ql = q.toLowerCase();
-    const ents = S.entities.filter(e => e.name.toLowerCase().includes(ql));
-    const tps = S.topics.filter(t => t.title.toLowerCase().includes(ql));
-    const notes = await store.searchNotes(q);
+    const ents = wsEntities().filter(e => e.name.toLowerCase().includes(ql));
+    const tps = wsTopics().filter(t => t.title.toLowerCase().includes(ql));
+    const notes = (await store.searchNotes(q)).filter(n => wsOfNote(n) === S.wsId);
     if (S.route !== r) return;
     let html = '';
     if (ents.length || tps.length) {
@@ -980,11 +1337,14 @@ function mark(text, q) {
 }
 
 /* ---------- note ---------- */
+// l'autore si mostra solo negli spazi con più di un account
+const showAuthor = n => n.user_id && accountsOf(n.workspace_id).length > 1;
 function noteEl(n) {
   const edited = n.updated_at && n.created_at && Math.abs(new Date(n.updated_at) - new Date(n.created_at)) > 1000;
   const el = h(`<article class="note ${n.todo ? 'is-todo' : ''} ${n.done ? 'is-done' : ''}" data-id="${n.id}">
     <div class="note-meta">
       ${n.todo ? `<input type="checkbox" class="todo-check" ${n.done ? 'checked' : ''} title="${n.done ? 'Fatto' : 'Segna come fatto'}">` : icon('clock', 'meta-ic')}
+      ${showAuthor(n) ? `<span class="author" title="Scritta da ${esc(authorName(n.user_id, n.workspace_id))}"><span class="mini-av ${tintOf(n.user_id)}">${esc(initialsOf(authorName(n.user_id, n.workspace_id)))}</span>${esc(authorName(n.user_id, n.workspace_id))}</span>` : ''}
       <time title="${edited ? 'Modificata il ' + fmtDate(n.updated_at) : ''}">${fmtDate(n.created_at)}</time>
       ${edited ? '<span class="edited">modificata</span>' : ''}
       ${n.todo ? `<span class="pill ${n.done ? 'green' : 'amber'}">${n.done ? 'Fatto' : 'Da fare'}</span>${n.done && !n.due_date ? '' : dueControl(n)}` : ''}
@@ -1049,7 +1409,8 @@ function serializeEditor(el) {
   html = html.replace(/^(?:<br\s*\/?>|<div><br\s*\/?><\/div>|&nbsp;|\s)+|(?:<br\s*\/?>|<div><br\s*\/?><\/div>|&nbsp;|\s)+$/gi, '');
   const text = (el.innerText || '').replace(/ /g, ' ').replace(/​/g, '').trim();
   const hasMedia = !!c.querySelector('img, a[data-path], table');
-  return { html, text, empty: !text && !hasMedia };
+  const mentions = [...new Set($$('[data-mention]', c).map(x => x.dataset.mention))];
+  return { html, text, mentions, empty: !text && !hasMedia };
 }
 
 /* ---------- formattazione del testo ---------- */
@@ -1187,10 +1548,106 @@ function placeCaretEnd(el) {
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
 }
 
-function setupEditor(el, { onSubmit, onEscape, onChange }) {
+const norm = s => String(s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+function setupEditor(el, { onSubmit, onEscape, onChange, people = () => [] }) {
   const api = { busy: 0, uploaded: new Set() };
   let lastRange = null;
   const changed = () => onChange && onChange();
+
+  /* tag delle persone: "@" apre l'elenco, frecce per scegliere, Invio o Tab per inserire */
+  const mention = { box: null, list: [], idx: 0, at: null };
+  function mentionQuery() {
+    const s = getSelection();
+    if (!s.rangeCount || !s.isCollapsed) return null;
+    const r = s.getRangeAt(0), node = r.startContainer;
+    if (node.nodeType !== 3 || !el.contains(node)) return null;
+    const m = node.data.slice(0, r.startOffset).match(/(?:^|[\s\u00a0(\u200b])@([^\s\u00a0@]{0,30})$/u);
+    if (!m) return null;
+    return { node, start: r.startOffset - m[1].length - 1, end: r.startOffset, q: norm(m[1]) };
+  }
+  function closeMention() { mention.box?.remove(); mention.box = null; mention.at = null; }
+  function drawMention() {
+    const b = mention.box;
+    if (!mention.list.length) {
+      b.innerHTML = `<div class="mention-empty">${people().length
+        ? 'Nessuna persona con questo nome'
+        : 'Nessuna persona in questo spazio. Aggiungile dalla pagina <a href="#/people">Persone</a>.'}</div>`;
+      return;
+    }
+    b.innerHTML = mention.list.map((m, i) => `<button type="button" class="mention-opt ${i === mention.idx ? 'on' : ''}" data-i="${i}">
+      <span class="mini-av ${tintOf(m.id)}">${esc(initialsOf(memberName(m)))}</span>
+      <span class="ellipsis">${esc(memberName(m))}</span>
+      <small>${m.user_id ? (m.user_id === store.uid ? 'tu' : 'utente') : m.email ? 'invitato' : 'senza account'}</small></button>`).join('');
+  }
+  function updateMention() {
+    const at = mentionQuery();
+    if (!at) return closeMention();
+    mention.at = at;
+    mention.list = people().filter(m => {
+      const n = norm(memberName(m));
+      return !at.q || n.startsWith(at.q) || n.split(/\s+/).some(w => w.startsWith(at.q)) || norm(m.email).startsWith(at.q);
+    }).slice(0, 8);
+    mention.idx = Math.min(mention.idx, Math.max(0, mention.list.length - 1));
+    if (!mention.box) {
+      mention.box = h('<div class="mention-box" role="listbox"></div>');
+      mention.box.addEventListener('mousedown', ev => { if (!ev.target.closest('a')) ev.preventDefault(); });
+      mention.box.addEventListener('click', ev => {
+        const o = ev.target.closest('[data-i]');
+        if (o) pickMention(+o.dataset.i);
+      });
+      document.body.append(mention.box);
+    }
+    drawMention();
+    // sotto il cursore (o sopra, se non c'è spazio)
+    const r = document.createRange();
+    r.setStart(at.node, at.start); r.setEnd(at.node, at.end);
+    const rect = r.getBoundingClientRect(), bh = mention.box.offsetHeight, bw = mention.box.offsetWidth;
+    const top = rect.bottom + 6 + bh > innerHeight ? rect.top - bh - 6 : rect.bottom + 6;
+    mention.box.style.top = `${Math.max(8, top)}px`;
+    mention.box.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - bw - 8))}px`;
+  }
+  function pickMention(i) {
+    const m = mention.list[i], at = mention.at;
+    if (!m || !at) return;
+    const r = document.createRange();
+    r.setStart(at.node, at.start); r.setEnd(at.node, at.end);
+    r.deleteContents();
+    const tag = h(`<span class="mention" contenteditable="false" data-mention="${esc(m.id)}">@${esc(memberName(m))}</span>`);
+    const space = document.createTextNode('\u00a0');
+    r.insertNode(space); r.insertNode(tag);
+    const c = document.createRange(); c.setStart(space, 1); c.collapse(true);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(c);
+    lastRange = c.cloneRange();
+    closeMention();
+    changed();
+  }
+  api.startMention = () => {
+    el.focus();
+    const s = getSelection();
+    if (!s.rangeCount || !el.contains(s.anchorNode)) placeCaretEnd(el);
+    const r = getSelection().getRangeAt(0), n = r.startContainer;
+    const prev = n.nodeType === 3 && r.startOffset ? n.data[r.startOffset - 1] : '';
+    exec('insertText', prev && !/\s|\u00a0/.test(prev) ? ' @' : '@');
+    updateMention();
+  };
+  el.addEventListener('keydown', ev => {
+    if (!mention.box) return;
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault(); ev.stopImmediatePropagation();
+      const n = mention.list.length;
+      if (n) { mention.idx = (mention.idx + (ev.key === 'ArrowDown' ? 1 : n - 1)) % n; drawMention(); }
+    } else if ((ev.key === 'Enter' || ev.key === 'Tab') && mention.list.length && !ev.shiftKey) {
+      ev.preventDefault(); ev.stopImmediatePropagation();
+      pickMention(mention.idx);
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault(); ev.stopImmediatePropagation();
+      closeMention();
+    }
+  });
+  el.addEventListener('input', () => { mention.idx = mention.box ? mention.idx : 0; updateMention(); });
+  el.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== el) closeMention(); }, 150));
+  el.addEventListener('mouseup', () => { if (mention.box) updateMention(); });
 
   const saveRange = () => {
     const s = getSelection();

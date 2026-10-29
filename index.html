@@ -15,12 +15,14 @@
     <form class="login-card" id="loginForm">
       <div class="login-brand" id="loginBrand"></div>
       <div>
-        <h1 class="login-title">Accedi</h1>
-        <p class="muted">Inserisci le credenziali per aprire il tuo archivio.</p>
+        <h1 class="login-title" id="loginTitle">Accedi</h1>
+        <p class="muted" id="loginSub">Inserisci le credenziali per aprire il tuo archivio.</p>
       </div>
       <label class="field"><span>Email</span><input type="email" id="loginEmail" required autocomplete="username"></label>
-      <label class="field"><span>Password</span><input type="password" id="loginPw" required autocomplete="current-password"></label>
-      <button class="btn primary block" type="submit">Accedi</button>
+      <label class="field"><span>Password</span><input type="password" id="loginPw" required minlength="6" autocomplete="current-password"></label>
+      <button class="btn primary block" type="submit" id="loginSubmit">Accedi</button>
+      <button class="link-btn" type="button" id="loginSwitch">Primo accesso? Crea la tua password</button>
+      <p class="ok" id="loginOk"></p>
       <p class="err" id="loginErr"></p>
     </form>
   </div>

@@ -31,6 +31,22 @@ Ente (Comune di Sassari)
 - La ricerca a sinistra cerca in enti, argomenti e testo di tutte le note.
 - Se lasci un argomento a metà nota, la bozza resta salvata.
 
+## Più persone: spazi di lavoro e tag
+
+```
+Personale            ← solo tuo (qui ci sono i dati che avevi già)
+Ufficio riscossione  ← spazio condiviso: Gianluca, Giorgio, Maria…
+```
+
+- **Spazi di lavoro**: in alto a sinistra scegli lo spazio. *Personale* lo vedi solo tu. Con **Nuovo spazio condiviso** ne crei uno da usare insieme ad altri: tutti gli utenti dello spazio vedono e modificano gli stessi enti, argomenti e note. Dashboard, Da fare, Calendario e ricerca mostrano lo spazio scelto.
+- **Aggiungere utenti** (pagina **Persone**, in uno spazio condiviso): scrivi nome ed email e premi *Aggiungi*. La persona apre l'app, sceglie **Primo accesso? Crea la tua password** e usa quell'email. Se ha già un account le basta accedere. Possono registrarsi solo le email invitate.
+- **Utenza condivisa**: se più persone usano lo stesso account, nella pagina **Persone** aggiungi i loro nomi *senza email*. Non hanno un accesso proprio, ma puoi taggarle. Funziona anche nello spazio Personale.
+- **Taggare**: in una nota scrivi **@** (oppure premi **Tagga**) e scegli la persona. Frecce per muoverti, Invio o Tab per inserire.
+- **Menzioni**: raccoglie le note in cui sei taggato (il numero accanto conta le attività ancora da fare). In alto puoi scegliere un'altra persona per vedere le note in cui è taggata lei. Cliccando un tag dentro una nota apri le sue menzioni.
+- **Spostare un ente** in un altro spazio: nella pagina dell'ente usa il pulsante con la cartella e la freccia. Si spostano anche argomenti, note e allegati.
+- Negli spazi con più utenti ogni nota mostra chi l'ha scritta. In **Persone** imposti anche il tuo nome.
+- Chi ha creato lo spazio può rinominarlo, eliminarlo, togliere persone. Gli altri possono uscirne.
+
 ## Prova subito (modalità locale)
 
 Apri `index.html` con Chrome o Edge. Con `js/config.js` vuoto i dati restano **solo in quel browser**: va bene per provare, non per l'uso vero.
@@ -41,8 +57,14 @@ Apri `index.html` con Chrome o Edge. Con `js/config.js` vuoto i dati restano **s
 1. Crea un account su https://supabase.com e poi un **New project** (regione: Europe, Frankfurt).
 2. **SQL Editor → New query**: incolla il contenuto di `supabase/schema.sql` e premi **Run**.
 3. **Authentication → Users → Add user → Create new user**: inserisci la tua email e una password e spunta *Auto Confirm User*.
-4. **Authentication → Sign In / Providers → Email**: disattiva **Allow new user sign ups**, così nessun altro può registrarsi.
-5. **Project Settings → API**: copia *Project URL* e *anon public key* in `js/config.js`.
+4. **Authentication → Sign In / Providers → Email**: lascia attivo **Allow new user sign ups**, così le persone invitate possono creare la loro password. Il database accetta solo le email invitate in uno spazio, quindi nessun altro può registrarsi. Se preferisci, disattiva **Confirm email**: gli invitati entrano subito, senza aspettare l'email di conferma (il servizio email gratuito di Supabase manda pochi messaggi l'ora).
+5. **Authentication → URL Configuration**: in *Site URL* metti l'indirizzo dell'app (es. `https://<tuo-utente>.github.io/secondbrain/`), così il link di conferma riporta all'app.
+6. **Project Settings → API**: copia *Project URL* e *anon public key* in `js/config.js`.
+
+### Aggiornare un database già creato
+Se usavi già l'app, rilancia `supabase/schema.sql` in **SQL Editor** (si può rieseguire senza perdere nulla). I tuoi enti finiscono nello spazio *Personale*. Poi segui i punti 4 e 5 qui sopra per permettere agli invitati di registrarsi.
+
+In alternativa agli inviti da app puoi creare gli utenti a mano (**Authentication → Users → Add user**), ma solo dopo averli invitati dalla pagina **Persone**: un'email non invitata viene rifiutata.
 
 ### 2. GitHub Pages (pubblicazione, gratuito)
 1. Crea un repository su GitHub (es. `secondbrain`) e caricaci questa cartella.
