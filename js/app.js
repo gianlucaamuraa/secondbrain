@@ -17,6 +17,13 @@ const byName = k => (a, b) => a[k].localeCompare(b[k], 'it', { sensitivity: 'bas
 const cleanName = s => String(s ?? '').replace(/\s+/g, ' ').trim();
 const nameKey = s => cleanName(s).toLowerCase();
 const isDuplicate = e => e?.code === '23505';
+// due elenchi separati: Enti (i comuni) e Attività. Ognuno ha i suoi argomenti.
+const KINDS = {
+  ente: { one: 'ente', many: 'Enti', icon: 'building', the: 'L’ente', a: 'un ente', none: 'Nessun ente', ex: 'Comune di Sassari' },
+  attivita: { one: 'attività', many: 'Attività', icon: 'activity', the: 'L’attività', a: 'un’attività', none: 'Nessuna attività', ex: 'Formazione' }
+};
+const kindOf = e => (e?.kind === 'attivita' ? 'attivita' : 'ente');
+const K = e => KINDS[kindOf(e)];
 
 /* ---------- date e scadenze (formato 'AAAA-MM-GG', ora locale) ---------- */
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -149,7 +156,12 @@ function toast(msg, type = '') {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.className = 'toast'; }, 3500);
 }
-const toastErr = e => { console.error(e); toast('Errore: ' + (e?.message || e), 'err'); };
+const toastErr = e => {
+  console.error(e);
+  // colonna "kind" mancante: lo schema su Supabase non è stato ancora rieseguito
+  if (/\bkind\b/.test(e?.message || '')) return toast('Aggiorna il database: esegui di nuovo supabase/schema.sql su Supabase', 'err');
+  toast('Errore: ' + (e?.message || e), 'err');
+};
 
 function loadScript(src) {
   return new Promise((res, rej) => {
@@ -245,11 +257,17 @@ function renderSidebar() {
   const sb = $('#sidebar');
   const email = store.email || '';
   const initials = email ? email.slice(0, 2).toUpperCase() : 'SB';
-  // ente mostrato nel menu: quello aperto, altrimenti l'ultimo scelto
-  if (r.eid && entityOf(r.eid)) ls.set('sb-entity', r.eid);
-  const cur = entityOf(r.eid) || entityOf(ls.get('sb-entity'));
-  const tps = cur ? topicsOf(cur.id) : [];
-  const curTopic = r.eid === cur?.id ? tps.find(t => t.id === r.tid) : null;
+  // per ogni elenco: quello aperto, altrimenti l'ultimo scelto
+  const opened = entityOf(r.eid);
+  if (opened) ls.set(`sb-${kindOf(opened)}`, opened.id);
+  const curOf = kind => { const e = opened && kindOf(opened) === kind ? opened : entityOf(ls.get(`sb-${kind}`)); return kindOf(e) === kind ? e : null; };
+  const section = kind => {
+    const k = KINDS[kind], cur = curOf(kind), n = S.entities.filter(e => kindOf(e) === kind).length;
+    return `<div class="sb-section"><span>${k.many}</span><button class="sb-add" data-new="${kind}" title="Nuova voce in ${k.many}">${icon('plus')}</button></div>
+    <form class="sb-new hidden" data-new-form="${kind}"><input placeholder="Nome e Invio" required></form>
+    ${n ? selectHtml(`sbSelect-${kind}`, { icon: k.icon, label: cur?.name, placeholder: `Scegli ${k.a}…`, search: 'Cerca…', active: cur && cur.id === r.eid })
+      : `<p class="sb-empty">${k.none}. Usa + per crearne ${kind === 'ente' ? 'uno' : 'una'}.</p>`}`;
+  };
   sb.innerHTML = `
     <div class="sb-head"><a href="#/" class="brand">${brand}</a></div>
     <nav class="sb-nav">
@@ -257,16 +275,8 @@ function renderSidebar() {
       <a href="#/todo" class="nav-item ${r.view === 'todo' ? 'active' : ''}">${icon('todo')}<span>Da fare</span>${S.todos.length ? `<span class="badge ${overdueCount() ? 'red' : ''}" title="${overdueCount() ? overdueCount() + ' scadute' : ''}">${S.todos.length}</span>` : ''}</a>
       <a href="#/calendar" class="nav-item ${r.view === 'calendar' ? 'active' : ''}">${icon('calendar')}<span>Calendario</span></a>
     </nav>
-    <div class="sb-section"><span>Enti</span><button class="sb-add" id="sbNewEntity" title="Nuovo ente">${icon('plus')}</button></div>
-    <form class="sb-new hidden" id="sbNewForm"><input placeholder="Nome ente e Invio" required></form>
-    ${S.entities.length
-      ? selectHtml('sbSelect', { icon: 'building', label: cur?.name, placeholder: 'Scegli un ente…', search: 'Cerca ente…', active: cur && r.view === 'entity' })
-      : '<p class="sb-empty">Nessun ente. Usa + per crearne uno.</p>'}
-    ${cur ? `<div class="sb-section"><span>Attività</span><button class="sb-add" id="sbNewTopic" title="Nuova attività in ${esc(cur.name)}">${icon('plus')}</button></div>
-    <form class="sb-new hidden" id="sbNewTopicForm"><input placeholder="Nuova attività e Invio" required></form>
-    ${tps.length
-      ? selectHtml('sbTopicSelect', { icon: 'folder', label: curTopic?.title, placeholder: 'Scegli un’attività…', search: 'Cerca attività…', active: !!curTopic })
-      : '<p class="sb-empty">Nessuna attività. Usa + per crearne una.</p>'}` : ''}
+    ${section('ente')}
+    ${section('attivita')}
     <div class="sb-spacer"></div>
     <div class="sb-foot">
       <button class="nav-item" data-act="export">${icon('download')}<span>Esporta backup</span></button>
@@ -282,40 +292,23 @@ function renderSidebar() {
         </div>`}
     </div>`;
 
-  $('#sbNewEntity').onclick = () => {
-    const f = $('#sbNewForm');
-    f.classList.toggle('hidden');
-    if (!f.classList.contains('hidden')) f.querySelector('input').focus();
-  };
-  $('#sbNewForm').onsubmit = ev => {
-    ev.preventDefault();
-    createEntity(ev.target.querySelector('input').value);
-  };
-  if (cur) {
-    $('#sbNewTopic').onclick = () => {
-      const f = $('#sbNewTopicForm');
+  for (const kind of Object.keys(KINDS)) {
+    const f = $(`[data-new-form="${kind}"]`);
+    $(`[data-new="${kind}"]`).onclick = () => {
       f.classList.toggle('hidden');
       if (!f.classList.contains('hidden')) f.querySelector('input').focus();
     };
-    $('#sbNewTopicForm').onsubmit = ev => {
-      ev.preventDefault();
-      createTopic(cur.id, ev.target.querySelector('input').value);
-    };
+    f.onsubmit = ev => { ev.preventDefault(); createEntity(f.querySelector('input').value, kind); };
+    const wrap = $(`#sbSelect-${kind}`);
+    if (wrap) searchSelect(wrap, {
+      options: S.entities.filter(e => kindOf(e) === kind)
+        .map(e => ({ id: e.id, label: e.name, dot: todosOfEntity(e.id), count: topicsOf(e.id).length })),
+      currentId: curOf(kind)?.id, empty: 'Nessun risultato',
+      exists: q => !!entityByName(q),
+      onPick: id => go(`#/e/${id}`),
+      onCreate: name => createEntity(name, kind)
+    });
   }
-  if ($('#sbSelect')) searchSelect($('#sbSelect'), {
-    options: S.entities.map(e => ({ id: e.id, label: e.name, dot: todosOfEntity(e.id), count: topicsOf(e.id).length })),
-    currentId: cur?.id, empty: 'Nessun ente trovato',
-    exists: q => !!entityByName(q),
-    onPick: id => go(`#/e/${id}`),
-    onCreate: name => createEntity(name)
-  });
-  if ($('#sbTopicSelect')) searchSelect($('#sbTopicSelect'), {
-    options: tps.map(t => ({ id: t.id, label: t.title, dot: todosOfTopic(t.id) })),
-    currentId: curTopic?.id, empty: 'Nessuna attività trovata',
-    exists: q => tps.some(t => nameKey(t.title) === nameKey(q)),
-    onPick: id => go(`#/e/${cur.id}/t/${id}`),
-    onCreate: title => createTopic(cur.id, title)
-  });
 }
 
 const go = hash => { if (location.hash === hash) closeDrawer(); else location.hash = hash; };
@@ -436,7 +429,7 @@ function topbar(title, sub = '', actions = '') {
       ${sub ? `<div class="tb-sub">${sub}</div>` : ''}
     </div>
     <form class="tb-search" data-search>
-      ${icon('search')}<input type="search" placeholder="Cerca in enti, argomenti e note" value="${esc(q)}">
+      ${icon('search')}<input type="search" placeholder="Cerca in enti, attività e note" value="${esc(q)}">
     </form>
     ${actions ? `<div class="actions">${actions}</div>` : ''}
   </header>`;
@@ -454,18 +447,18 @@ document.addEventListener('submit', ev => {
 const entityByName = (name, exceptId) => S.entities.find(e => e.id !== exceptId && nameKey(e.name) === nameKey(name));
 
 let creatingEntity = false;
-async function createEntity(name) {
+async function createEntity(name, kind = 'ente') {
   name = cleanName(name);
   if (!name || creatingEntity) return;
   const same = entityByName(name);
   if (same) {
-    toast(`L’ente "${same.name}" esiste già: te lo apro`);
+    toast(`${K(same).the} "${same.name}" esiste già: te lo apro`);
     location.hash = `#/e/${same.id}`;
     return;
   }
   creatingEntity = true;
   try {
-    const e = await store.createEntity(name);
+    const e = await store.createEntity(name, kind);
     S.entities.push(e); S.entities.sort(byName('name'));
     location.hash = `#/e/${e.id}`;
   } catch (e) {
@@ -473,7 +466,7 @@ async function createEntity(name) {
     // creato nel frattempo da un altro dispositivo: ricarico e apro quello
     await reloadAll();
     const ex = entityByName(name);
-    toast(`L’ente "${ex?.name || name}" esiste già: te lo apro`);
+    toast(`"${ex?.name || name}" esiste già: te lo apro`);
     if (ex) location.hash = `#/e/${ex.id}`; else render();
   } finally { creatingEntity = false; }
 }
@@ -524,18 +517,24 @@ document.addEventListener('click', async ev => {
     switch (el.dataset.act) {
       case 'menu': openDrawer(); break;
       case 'rename-entity': {
-        const name = cleanName(await askText('Rinomina ente', ent.name));
+        const name = cleanName(await askText(`Rinomina ${K(ent).one}`, ent.name));
         if (!name || name === ent.name) return;
         const same = entityByName(name, ent.id);
-        if (same) { toast(`Esiste già un ente chiamato "${same.name}"`, 'err'); return; }
+        if (same) { toast(`Esiste già ${K(same).a} chiamato "${same.name}"`, 'err'); return; }
         try {
           Object.assign(ent, await store.updateEntity(ent.id, { name }));
         } catch (e) {
           if (!isDuplicate(e)) throw e;
           await reloadAll(); render();
-          toast(`Esiste già un ente chiamato "${name}"`, 'err'); return;
+          toast(`Esiste già una voce chiamata "${name}"`, 'err'); return;
         }
         S.entities.sort(byName('name'));
+        render(); break;
+      }
+      case 'move-entity': {
+        const to = kindOf(ent) === 'ente' ? 'attivita' : 'ente';
+        Object.assign(ent, await store.updateEntity(ent.id, { kind: to }));
+        toast(`"${ent.name}" spostato in ${KINDS[to].many}`);
         render(); break;
       }
       case 'delete-entity': {
@@ -645,6 +644,7 @@ const actionBtns = kind => `
         <span class="tile sm rose">${icon('file')}</span><span><strong>PDF</strong><small>Pronto da stampare o inviare</small></span></button>
     </div>
   </div>
+  ${kind === 'entity' ? `<button class="btn" data-act="move-entity" title="Sposta nell’altro elenco">Sposta in ${KINDS[kindOf(entityOf(S.route?.eid)) === 'ente' ? 'attivita' : 'ente'].many}</button>` : ''}
   <button class="icon-btn" data-act="rename-${kind}" title="Rinomina">${icon('edit')}</button>
   <button class="icon-btn danger" data-act="delete-${kind}" title="Elimina">${icon('trash')}</button>`;
 
@@ -660,31 +660,35 @@ const VIEWS = {
     const lastAct = eid => topicsOf(eid).reduce((m, t) => (t.last_activity > m ? t.last_activity : m), '');
     const recent = [...S.topics].sort(byActivity).slice(0, 6);
     const upcoming = S.todos.filter(n => n.due_date).slice(0, 6);
-    main.innerHTML = `${topbar('Dashboard', today())}
-      <div class="page">
-        <div class="stats">
-          ${stat('todo', 'amber', S.todos.length, 'Attività da fare', '#/todo')}
-          ${stat('alert', 'rose', overdueCount(), 'Attività scadute', '#/todo?f=over')}
-        </div>
-        <div class="dash-grid">
-          <section class="panel">
-            <div class="panel-head"><h2>Enti</h2></div>
-            <form class="inline-form" id="newEntity">
-              <input placeholder="Nuovo ente, es. Comune di Sassari" required>
-              <button class="btn primary">${icon('plus')}Crea ente</button>
+    const entPanel = kind => {
+      const k = KINDS[kind];
+      return `<section class="panel">
+            <div class="panel-head"><h2>${k.many}</h2></div>
+            <form class="inline-form" data-dash-new="${kind}">
+              <input placeholder="Nuovo, es. ${k.ex}" required>
+              <button class="btn primary">${icon('plus')}Crea</button>
             </form>
             <div class="cards">
-              ${S.entities.map(e => {
+              ${S.entities.filter(e => kindOf(e) === kind).map(e => {
                 const n = topicsOf(e.id).length, todo = todosOfEntity(e.id), la = lastAct(e.id);
                 return `<a class="card" href="#/e/${e.id}">
-                  <div class="card-top"><span class="tile ${tintOf(e.name)}">${icon('building')}</span>
+                  <div class="card-top"><span class="tile ${tintOf(e.name)}">${icon(k.icon)}</span>
                     ${todo ? `<span class="pill amber">${todo} da fare</span>` : ''}</div>
                   <div class="card-title">${esc(e.name)}</div>
                   <div class="card-meta">${plural(n, 'argomento', 'argomenti')}${la ? ` · ${fmtDate(la)}` : ''}</div>
                 </a>`;
-              }).join('') || empty('building', 'Nessun ente', 'Crea il primo ente con il campo qui sopra.')}
+              }).join('') || empty(k.icon, k.none, 'Crea la prima voce con il campo qui sopra.')}
             </div>
-          </section>
+          </section>`;
+    };
+    main.innerHTML = `${topbar('Dashboard', today())}
+      <div class="page">
+        <div class="stats">
+          ${stat('todo', 'amber', S.todos.length, 'Cose da fare', '#/todo')}
+          ${stat('alert', 'rose', overdueCount(), 'Scadute', '#/todo?f=over')}
+        </div>
+        <div class="dash-grid">
+          <div class="main-col">${entPanel('ente')}${entPanel('attivita')}</div>
           <div class="side-col">
           <section class="panel">
             <div class="panel-head"><h2>Prossime scadenze</h2><a class="link" href="#/calendar">Calendario</a></div>
@@ -692,19 +696,19 @@ const VIEWS = {
               : empty('calendar', 'Nessuna scadenza', 'Quando segni una nota come da fare puoi darle una data.')}
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>Attività recente</h2></div>
+            <div class="panel-head"><h2>Argomenti recenti</h2></div>
             ${recent.length ? `<div class="rows">${recent.map(t => {
               const e = entityOf(t.entity_id);
               return `<a class="row" href="#/e/${t.entity_id}/t/${t.id}">
                 <span class="tile sm ${tintOf(e?.name || '')}">${icon('folder')}</span>
                 <span class="row-main"><strong class="ellipsis">${esc(t.title)}</strong><span class="ellipsis muted">${esc(e?.name)}</span></span>
                 <span class="row-side">${t.last_activity ? fmtDate(t.last_activity).split(' - ')[0] : ''}</span></a>`;
-            }).join('')}</div>` : empty('activity', 'Ancora nessuna attività', 'Gli argomenti aggiornati compariranno qui.')}
+            }).join('')}</div>` : empty('activity', 'Ancora niente', 'Gli argomenti aggiornati compariranno qui.')}
           </section>
           </div>
         </div>
       </div>`;
-    $('#newEntity').onsubmit = ev => { ev.preventDefault(); createEntity(ev.target.querySelector('input').value); };
+    for (const f of $$('[data-dash-new]')) f.onsubmit = ev => { ev.preventDefault(); createEntity(f.querySelector('input').value, f.dataset.dashNew); };
   },
 
   async entity(r) {
@@ -712,7 +716,7 @@ const VIEWS = {
     if (!ent) return notFound();
     const tps = topicsOf(ent.id); // già in ordine alfabetico
     main.innerHTML = `${topbar(esc(ent.name),
-      `<a href="#/">Dashboard</a>${icon('chevron')}<span>${plural(tps.length, 'argomento', 'argomenti')}</span>`, actionBtns('entity'))}
+      `<a href="#/">Dashboard</a>${icon('chevron')}<span>${K(ent).many}</span>${icon('chevron')}<span>${plural(tps.length, 'argomento', 'argomenti')}</span>`, actionBtns('entity'))}
       <div class="page">
         <section class="panel">
           <div class="panel-head"><h2>Argomenti</h2></div>
@@ -1070,9 +1074,9 @@ const VIEWS = {
     if (S.route !== r) return;
     let html = '';
     if (ents.length || tps.length) {
-      html += `<section class="panel"><div class="panel-head"><h2>Enti e argomenti</h2></div><div class="rows">
-        ${ents.map(e => `<a class="row" href="#/e/${e.id}"><span class="tile sm ${tintOf(e.name)}">${icon('building')}</span>
-          <span class="row-main"><strong>${mark(e.name, q)}</strong><span class="muted">Ente</span></span></a>`).join('')}
+      html += `<section class="panel"><div class="panel-head"><h2>Enti, attività e argomenti</h2></div><div class="rows">
+        ${ents.map(e => `<a class="row" href="#/e/${e.id}"><span class="tile sm ${tintOf(e.name)}">${icon(K(e).icon)}</span>
+          <span class="row-main"><strong>${mark(e.name, q)}</strong><span class="muted">${cap1(K(e).one)}</span></span></a>`).join('')}
         ${tps.map(t => `<a class="row" href="#/e/${t.entity_id}/t/${t.id}"><span class="tile sm ${tintOf(t.title)}">${icon('folder')}</span>
           <span class="row-main"><strong>${mark(t.title, q)}</strong><span class="muted">${esc(entityOf(t.entity_id)?.name)}</span></span></a>`).join('')}
       </div></section>`;

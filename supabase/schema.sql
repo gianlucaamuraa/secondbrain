@@ -8,6 +8,13 @@ create table if not exists public.entities (
   created_at timestamptz not null default now()
 );
 
+-- Due elenchi separati nella stessa tabella: 'ente' (i comuni) e 'attivita'.
+alter table public.entities add column if not exists kind text not null default 'ente';
+do $$ begin
+  alter table public.entities add constraint entities_kind_check check (kind in ('ente', 'attivita'));
+exception when duplicate_object then null;
+end $$;
+
 -- Niente enti doppi: due nomi uguali a meno di maiuscole e spazi sono lo stesso ente.
 -- Se ci sono già doppioni, i loro argomenti passano all'ente creato per primo
 -- e i doppioni (ormai vuoti) vengono eliminati. Nessuna nota va persa.

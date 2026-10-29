@@ -39,9 +39,9 @@ function createLocalStore() {
     async init() { await open(); return { needsLogin: false }; },
 
     listEntities: () => all('entities'),
-    async createEntity(name) {
+    async createEntity(name, kind = 'ente') {
       await noDuplicate(name);
-      const e = { id: newId(), name, created_at: now() };
+      const e = { id: newId(), name, kind, created_at: now() };
       await put('entities', e); return e;
     },
     async updateEntity(id, patch) {

@@ -33,7 +33,8 @@ function createSupabaseStore(cfg) {
     async logout() { await sb.auth.signOut(); uid = null; },
 
     listEntities: () => fetchAll('entities'),
-    createEntity: name => q(sb.from('entities').insert({ name }).select().single()),
+    // "kind" si manda solo per le attività: gli enti funzionano anche col database non ancora aggiornato
+    createEntity: (name, kind) => q(sb.from('entities').insert(kind === 'attivita' ? { name, kind } : { name }).select().single()),
     updateEntity: (id, patch) => q(sb.from('entities').update(patch).eq('id', id).select().single()),
     async deleteEntity(id) {
       const tps = await q(sb.from('topics').select('id').eq('entity_id', id));

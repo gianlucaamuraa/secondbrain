@@ -19,7 +19,9 @@ Ente (Comune di Sassari)
 - Spunta **Da fare** prima di salvare per trasformare la nota in un'attività. Puoi darle una **scadenza** (campo data, oppure Oggi / Domani). Per cambiarla o toglierla in seguito, clicca sulla data della nota.
 - La pagina **Da fare** raccoglie le attività aperte, divise in Scadute, Oggi, Domani, Prossimi 7 giorni, Più avanti e Senza scadenza.
 - Il **Calendario** mostra le scadenze giorno per giorno. Clicca un giorno per vederne l'elenco, spuntare le attività fatte o spostarle.
-- Nella barra laterale scegli l'ente dal menu a tendina: scrivi per cercarlo, usa le frecce e Invio. Se non esiste, il menu propone di crearlo. Sotto, la sezione **Attività** ha lo stesso menu con ricerca per gli argomenti dell'ente scelto; con **+** (o scrivendo un nome nuovo nel menu) ne crei uno.
+- Ci sono due elenchi separati: **Enti** (i comuni) e **Attività** (tutto ciò che non è un comune, es. Formazione). Ognuno ha i suoi argomenti e le sue note.
+- Nella barra laterale ogni elenco ha un menu a tendina con ricerca: scrivi per cercare, usa le frecce e Invio. Se il nome non esiste, il menu propone di crearlo; anche **+** crea una voce nuova.
+- Se hai messo una voce nell'elenco sbagliato, aprila e usa **Sposta in Enti** / **Sposta in Attività**.
 - Enti e argomenti sono sempre in ordine alfabetico.
 - **Formattazione**: usa la barra sopra il testo (grassetto, corsivo, sottolineato, barrato, evidenziato, titolo, sottotitolo, elenchi, caselle di controllo, citazione, link) oppure le scorciatoie a inizio riga: `- ` elenco, `1. ` elenco numerato, `[] ` casella, `# ` titolo, `## ` sottotitolo, `> ` citazione. Dentro un elenco Invio crea una nuova voce: per salvare usa **Ctrl+Invio**. Le caselle si spuntano anche sulla nota già salvata.
 - **Scarica** (in alto a destra):
