@@ -27,6 +27,12 @@ function createLocalStore() {
   const del = async (name, key) => P((await os(name, 'readwrite')).delete(key));
   const byIndex = async (name, idx, val) => P((await os(name)).index(idx).getAll(val));
   const urlCache = new Map();
+  // come l'indice unico del database: niente due enti con lo stesso nome
+  const nameKey = s => String(s ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  async function noDuplicate(name, exceptId) {
+    if ((await all('entities')).some(e => e.id !== exceptId && nameKey(e.name) === nameKey(name)))
+      throw Object.assign(new Error('Esiste già un ente con questo nome'), { code: '23505' });
+  }
 
   return {
     mode: 'local',
@@ -34,10 +40,12 @@ function createLocalStore() {
 
     listEntities: () => all('entities'),
     async createEntity(name) {
+      await noDuplicate(name);
       const e = { id: newId(), name, created_at: now() };
       await put('entities', e); return e;
     },
     async updateEntity(id, patch) {
+      if ('name' in patch) await noDuplicate(patch.name, id);
       const e = Object.assign(await get('entities', id), patch);
       await put('entities', e); return e;
     },

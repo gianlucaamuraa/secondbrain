@@ -13,6 +13,10 @@ const today = () => { const s = new Date().toLocaleDateString('it-IT', { weekday
 const pathsIn = html => [...String(html || '').matchAll(/data-path="([^"]+)"/g)].map(m => m[1]);
 // ordine alfabetico italiano, con i numeri in ordine naturale ("Lotto 2" prima di "Lotto 10")
 const byName = k => (a, b) => a[k].localeCompare(b[k], 'it', { sensitivity: 'base', numeric: true });
+// nomi degli enti: spazi in più tolti; per il confronto maiuscole e minuscole non contano
+const cleanName = s => String(s ?? '').replace(/\s+/g, ' ').trim();
+const nameKey = s => cleanName(s).toLowerCase();
+const isDuplicate = e => e?.code === '23505';
 
 /* ---------- date e scadenze (formato 'AAAA-MM-GG', ora locale) ---------- */
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -342,14 +346,32 @@ document.addEventListener('submit', ev => {
 });
 
 /* ---------- azioni comuni ---------- */
+// ente con lo stesso nome (escluso, se indicato, quello che si sta rinominando)
+const entityByName = (name, exceptId) => S.entities.find(e => e.id !== exceptId && nameKey(e.name) === nameKey(name));
+
+let creatingEntity = false;
 async function createEntity(name) {
-  name = name.trim();
-  if (!name) return;
+  name = cleanName(name);
+  if (!name || creatingEntity) return;
+  const same = entityByName(name);
+  if (same) {
+    toast(`L’ente "${same.name}" esiste già: te lo apro`);
+    location.hash = `#/e/${same.id}`;
+    return;
+  }
+  creatingEntity = true;
   try {
     const e = await store.createEntity(name);
     S.entities.push(e); S.entities.sort(byName('name'));
     location.hash = `#/e/${e.id}`;
-  } catch (e) { toastErr(e); }
+  } catch (e) {
+    if (!isDuplicate(e)) return toastErr(e);
+    // creato nel frattempo da un altro dispositivo: ricarico e apro quello
+    await reloadAll();
+    const ex = entityByName(name);
+    toast(`L’ente "${ex?.name || name}" esiste già: te lo apro`);
+    if (ex) location.hash = `#/e/${ex.id}`; else render();
+  } finally { creatingEntity = false; }
 }
 
 async function createTopic(eid, title) {
@@ -398,9 +420,17 @@ document.addEventListener('click', async ev => {
     switch (el.dataset.act) {
       case 'menu': openDrawer(); break;
       case 'rename-entity': {
-        const name = await askText('Rinomina ente', ent.name);
+        const name = cleanName(await askText('Rinomina ente', ent.name));
         if (!name || name === ent.name) return;
-        Object.assign(ent, await store.updateEntity(ent.id, { name }));
+        const same = entityByName(name, ent.id);
+        if (same) { toast(`Esiste già un ente chiamato "${same.name}"`, 'err'); return; }
+        try {
+          Object.assign(ent, await store.updateEntity(ent.id, { name }));
+        } catch (e) {
+          if (!isDuplicate(e)) throw e;
+          await reloadAll(); render();
+          toast(`Esiste già un ente chiamato "${name}"`, 'err'); return;
+        }
         S.entities.sort(byName('name'));
         render(); break;
       }
