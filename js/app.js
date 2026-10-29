@@ -248,6 +248,8 @@ function renderSidebar() {
   // ente mostrato nel menu: quello aperto, altrimenti l'ultimo scelto
   if (r.eid && entityOf(r.eid)) ls.set('sb-entity', r.eid);
   const cur = entityOf(r.eid) || entityOf(ls.get('sb-entity'));
+  const tps = cur ? topicsOf(cur.id) : [];
+  const curTopic = r.eid === cur?.id ? tps.find(t => t.id === r.tid) : null;
   sb.innerHTML = `
     <div class="sb-head"><a href="#/" class="brand">${brand}</a></div>
     <nav class="sb-nav">
@@ -257,21 +259,15 @@ function renderSidebar() {
     </nav>
     <div class="sb-section"><span>Enti</span><button class="sb-add" id="sbNewEntity" title="Nuovo ente">${icon('plus')}</button></div>
     <form class="sb-new hidden" id="sbNewForm"><input placeholder="Nome ente e Invio" required></form>
-    ${S.entities.length ? `
-    <div class="sb-select" id="sbSelect">
-      <button type="button" class="sb-select-btn ${cur ? '' : 'placeholder'} ${cur && r.view === 'entity' ? 'active' : ''}" aria-haspopup="listbox" aria-expanded="false" title="${esc(cur?.name || '')}">
-        ${icon('building')}<span class="ellipsis">${cur ? esc(cur.name) : 'Scegli un ente…'}</span>${icon('chevron', 'chev')}
-      </button>
-      <div class="sb-select-pop hidden">
-        <div class="sb-select-search">${icon('search')}<input type="text" placeholder="Cerca ente…" autocomplete="off" spellcheck="false"></div>
-        <div class="sb-select-list" role="listbox"></div>
-      </div>
-    </div>` : '<p class="sb-empty">Nessun ente. Usa + per crearne uno.</p>'}
+    ${S.entities.length
+      ? selectHtml('sbSelect', { icon: 'building', label: cur?.name, placeholder: 'Scegli un ente…', search: 'Cerca ente…', active: cur && r.view === 'entity' })
+      : '<p class="sb-empty">Nessun ente. Usa + per crearne uno.</p>'}
     ${cur ? `<div class="sb-section"><span>Attività</span><button class="sb-add" id="sbNewTopic" title="Nuova attività in ${esc(cur.name)}">${icon('plus')}</button></div>
-    <form class="sb-new hidden" id="sbNewTopicForm"><input placeholder="Nuova attività e Invio" required></form>` : ''}
-    <div class="sb-entities">
-      ${cur ? `<div class="sb-topics">${topicsOf(cur.id).map(t => `<a href="#/e/${cur.id}/t/${t.id}" class="sub-item ${r.tid === t.id ? 'active' : ''}"><span class="ellipsis">${esc(t.title)}</span>${todosOfTopic(t.id) ? '<span class="dot" title="Ci sono cose da fare"></span>' : ''}</a>`).join('') || '<span class="sub-empty">Nessuna attività. Usa + per crearne una.</span>'}</div>` : ''}
-    </div>
+    <form class="sb-new hidden" id="sbNewTopicForm"><input placeholder="Nuova attività e Invio" required></form>
+    ${tps.length
+      ? selectHtml('sbTopicSelect', { icon: 'folder', label: curTopic?.title, placeholder: 'Scegli un’attività…', search: 'Cerca attività…', active: !!curTopic })
+      : '<p class="sb-empty">Nessuna attività. Usa + per crearne una.</p>'}` : ''}
+    <div class="sb-spacer"></div>
     <div class="sb-foot">
       <button class="nav-item" data-act="export">${icon('download')}<span>Esporta backup</span></button>
       ${store.mode === 'cloud' ? `
@@ -306,12 +302,38 @@ function renderSidebar() {
       createTopic(cur.id, ev.target.querySelector('input').value);
     };
   }
-  if ($('#sbSelect')) entitySelect($('#sbSelect'), cur);
+  if ($('#sbSelect')) searchSelect($('#sbSelect'), {
+    options: S.entities.map(e => ({ id: e.id, label: e.name, dot: todosOfEntity(e.id), count: topicsOf(e.id).length })),
+    currentId: cur?.id, empty: 'Nessun ente trovato',
+    exists: q => !!entityByName(q),
+    onPick: id => go(`#/e/${id}`),
+    onCreate: name => createEntity(name)
+  });
+  if ($('#sbTopicSelect')) searchSelect($('#sbTopicSelect'), {
+    options: tps.map(t => ({ id: t.id, label: t.title, dot: todosOfTopic(t.id) })),
+    currentId: curTopic?.id, empty: 'Nessuna attività trovata',
+    exists: q => tps.some(t => nameKey(t.title) === nameKey(q)),
+    onPick: id => go(`#/e/${cur.id}/t/${id}`),
+    onCreate: title => createTopic(cur.id, title)
+  });
 }
 
-// Menu a tendina degli enti con campo di ricerca (frecce, Invio, Esc).
-// Se la ricerca non trova niente, propone di creare l'ente.
-function entitySelect(wrap, cur) {
+const go = hash => { if (location.hash === hash) closeDrawer(); else location.hash = hash; };
+
+// Menu a tendina con campo di ricerca (frecce, Invio, Esc), usato per enti e attività.
+const selectHtml = (id, o) => `
+    <div class="sb-select" id="${id}">
+      <button type="button" class="sb-select-btn ${o.label ? '' : 'placeholder'} ${o.active ? 'active' : ''}" aria-haspopup="listbox" aria-expanded="false" title="${esc(o.label || '')}">
+        ${icon(o.icon)}<span class="ellipsis">${esc(o.label || o.placeholder)}</span>${icon('chevron', 'chev')}
+      </button>
+      <div class="sb-select-pop hidden">
+        <div class="sb-select-search">${icon('search')}<input type="text" placeholder="${esc(o.search)}" autocomplete="off" spellcheck="false"></div>
+        <div class="sb-select-list" role="listbox"></div>
+      </div>
+    </div>`;
+
+// options: [{ id, label, dot, count }]. Se la ricerca non trova quel nome esatto, propone di crearlo.
+function searchSelect(wrap, { options, currentId, empty, exists, onPick, onCreate }) {
   const btn = $('.sb-select-btn', wrap), pop = $('.sb-select-pop', wrap);
   const inp = $('input', pop), list = $('.sb-select-list', pop);
   const fold = s => String(s).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
@@ -325,21 +347,21 @@ function entitySelect(wrap, cur) {
 
   const draw = () => {
     const q = inp.value.trim(), fq = fold(cleanName(q));
-    items = S.entities.filter(e => fold(e.name).includes(fq)).map(e => ({ e }));
-    if (q && !entityByName(q)) items.push({ create: cleanName(q) });
+    items = options.filter(o => fold(o.label).includes(fq)).map(e => ({ e }));
+    if (q && !exists(q)) items.push({ create: cleanName(q) });
     hi = Math.max(0, Math.min(hi, items.length - 1));
     list.innerHTML = items.map((it, i) => it.e
-      ? `<div class="sb-opt ${i === hi ? 'hi' : ''} ${it.e.id === cur?.id ? 'sel' : ''}" role="option" data-i="${i}">
-          <span class="ellipsis">${markFirst(it.e.name, fq)}</span>
-          ${todosOfEntity(it.e.id) ? '<span class="dot" title="Ci sono cose da fare"></span>' : ''}
-          <span class="sb-opt-n">${topicsOf(it.e.id).length}</span></div>`
+      ? `<div class="sb-opt ${i === hi ? 'hi' : ''} ${it.e.id === currentId ? 'sel' : ''}" role="option" data-i="${i}">
+          <span class="ellipsis">${markFirst(it.e.label, fq)}</span>
+          ${it.e.dot ? '<span class="dot" title="Ci sono cose da fare"></span>' : ''}
+          ${it.e.count != null ? `<span class="sb-opt-n">${it.e.count}</span>` : ''}</div>`
       : `<div class="sb-opt create ${i === hi ? 'hi' : ''}" role="option" data-i="${i}">${icon('plus')}<span class="ellipsis">Crea “${esc(it.create)}”</span></div>`
-    ).join('') || '<div class="sb-opt-empty">Nessun ente trovato</div>';
+    ).join('') || `<div class="sb-opt-empty">${esc(empty)}</div>`;
     list.querySelector('.hi')?.scrollIntoView({ block: 'nearest' });
   };
   const open = () => {
     pop.classList.remove('hidden'); wrap.classList.add('open'); btn.setAttribute('aria-expanded', 'true');
-    inp.value = ''; hi = Math.max(0, S.entities.findIndex(e => e.id === cur?.id));
+    inp.value = ''; hi = Math.max(0, options.findIndex(o => o.id === currentId));
     draw(); inp.focus();
     setTimeout(() => document.addEventListener('mousedown', outside), 0);
   };
@@ -352,9 +374,7 @@ function entitySelect(wrap, cur) {
     const it = items[i];
     if (!it) return;
     close();
-    if (it.create) createEntity(it.create);
-    else if (location.hash === `#/e/${it.e.id}`) closeDrawer();
-    else location.hash = `#/e/${it.e.id}`;
+    if (it.create) onCreate(it.create); else onPick(it.e.id);
   };
 
   btn.onclick = () => pop.classList.contains('hidden') ? open() : close();
