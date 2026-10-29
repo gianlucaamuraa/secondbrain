@@ -13,6 +13,10 @@ const today = () => { const s = new Date().toLocaleDateString('it-IT', { weekday
 const pathsIn = html => [...String(html || '').matchAll(/data-path="([^"]+)"/g)].map(m => m[1]);
 // ordine alfabetico italiano, con i numeri in ordine naturale ("Lotto 2" prima di "Lotto 10")
 const byName = k => (a, b) => a[k].localeCompare(b[k], 'it', { sensitivity: 'base', numeric: true });
+// nomi degli enti: spazi in più tolti; per il confronto maiuscole e minuscole non contano
+const cleanName = s => String(s ?? '').replace(/\s+/g, ' ').trim();
+const nameKey = s => cleanName(s).toLowerCase();
+const isDuplicate = e => e?.code === '23505';
 
 /* ---------- date e scadenze (formato 'AAAA-MM-GG', ora locale) ---------- */
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -241,6 +245,11 @@ function renderSidebar() {
   const sb = $('#sidebar');
   const email = store.email || '';
   const initials = email ? email.slice(0, 2).toUpperCase() : 'SB';
+  // ente mostrato nel menu: quello aperto, altrimenti l'ultimo scelto
+  if (r.eid && entityOf(r.eid)) ls.set('sb-entity', r.eid);
+  const cur = entityOf(r.eid) || entityOf(ls.get('sb-entity'));
+  const tps = cur ? topicsOf(cur.id) : [];
+  const curTopic = r.eid === cur?.id ? tps.find(t => t.id === r.tid) : null;
   sb.innerHTML = `
     <div class="sb-head"><a href="#/" class="brand">${brand}</a></div>
     <nav class="sb-nav">
@@ -250,17 +259,15 @@ function renderSidebar() {
     </nav>
     <div class="sb-section"><span>Enti</span><button class="sb-add" id="sbNewEntity" title="Nuovo ente">${icon('plus')}</button></div>
     <form class="sb-new hidden" id="sbNewForm"><input placeholder="Nome ente e Invio" required></form>
-    <div class="sb-entities">
-      ${S.entities.map(e => {
-        const open = r.eid === e.id;
-        const tps = topicsOf(e.id);
-        return `<div class="sb-entity ${open ? 'open' : ''}">
-          <a href="#/e/${e.id}" title="${esc(e.name)}" class="nav-item ${open && r.view === 'entity' ? 'active' : ''} ${open ? 'current' : ''}">
-            ${icon('building')}<span class="ellipsis">${esc(e.name)}</span>${icon('chevron', 'chev')}</a>
-          ${open ? `<div class="sb-topics">${tps.map(t => `<a href="#/e/${e.id}/t/${t.id}" class="sub-item ${r.tid === t.id ? 'active' : ''}"><span class="ellipsis">${esc(t.title)}</span>${todosOfTopic(t.id) ? '<span class="dot" title="Ci sono cose da fare"></span>' : ''}</a>`).join('') || '<span class="sub-empty">Nessun argomento</span>'}</div>` : ''}
-        </div>`;
-      }).join('') || '<p class="sb-empty">Nessun ente. Usa + per crearne uno.</p>'}
-    </div>
+    ${S.entities.length
+      ? selectHtml('sbSelect', { icon: 'building', label: cur?.name, placeholder: 'Scegli un ente…', search: 'Cerca ente…', active: cur && r.view === 'entity' })
+      : '<p class="sb-empty">Nessun ente. Usa + per crearne uno.</p>'}
+    ${cur ? `<div class="sb-section"><span>Attività</span><button class="sb-add" id="sbNewTopic" title="Nuova attività in ${esc(cur.name)}">${icon('plus')}</button></div>
+    <form class="sb-new hidden" id="sbNewTopicForm"><input placeholder="Nuova attività e Invio" required></form>
+    ${tps.length
+      ? selectHtml('sbTopicSelect', { icon: 'folder', label: curTopic?.title, placeholder: 'Scegli un’attività…', search: 'Cerca attività…', active: !!curTopic })
+      : '<p class="sb-empty">Nessuna attività. Usa + per crearne una.</p>'}` : ''}
+    <div class="sb-spacer"></div>
     <div class="sb-foot">
       <button class="nav-item" data-act="export">${icon('download')}<span>Esporta backup</span></button>
       ${store.mode === 'cloud' ? `
@@ -283,6 +290,107 @@ function renderSidebar() {
   $('#sbNewForm').onsubmit = ev => {
     ev.preventDefault();
     createEntity(ev.target.querySelector('input').value);
+  };
+  if (cur) {
+    $('#sbNewTopic').onclick = () => {
+      const f = $('#sbNewTopicForm');
+      f.classList.toggle('hidden');
+      if (!f.classList.contains('hidden')) f.querySelector('input').focus();
+    };
+    $('#sbNewTopicForm').onsubmit = ev => {
+      ev.preventDefault();
+      createTopic(cur.id, ev.target.querySelector('input').value);
+    };
+  }
+  if ($('#sbSelect')) searchSelect($('#sbSelect'), {
+    options: S.entities.map(e => ({ id: e.id, label: e.name, dot: todosOfEntity(e.id), count: topicsOf(e.id).length })),
+    currentId: cur?.id, empty: 'Nessun ente trovato',
+    exists: q => !!entityByName(q),
+    onPick: id => go(`#/e/${id}`),
+    onCreate: name => createEntity(name)
+  });
+  if ($('#sbTopicSelect')) searchSelect($('#sbTopicSelect'), {
+    options: tps.map(t => ({ id: t.id, label: t.title, dot: todosOfTopic(t.id) })),
+    currentId: curTopic?.id, empty: 'Nessuna attività trovata',
+    exists: q => tps.some(t => nameKey(t.title) === nameKey(q)),
+    onPick: id => go(`#/e/${cur.id}/t/${id}`),
+    onCreate: title => createTopic(cur.id, title)
+  });
+}
+
+const go = hash => { if (location.hash === hash) closeDrawer(); else location.hash = hash; };
+
+// Menu a tendina con campo di ricerca (frecce, Invio, Esc), usato per enti e attività.
+const selectHtml = (id, o) => `
+    <div class="sb-select" id="${id}">
+      <button type="button" class="sb-select-btn ${o.label ? '' : 'placeholder'} ${o.active ? 'active' : ''}" aria-haspopup="listbox" aria-expanded="false" title="${esc(o.label || '')}">
+        ${icon(o.icon)}<span class="ellipsis">${esc(o.label || o.placeholder)}</span>${icon('chevron', 'chev')}
+      </button>
+      <div class="sb-select-pop hidden">
+        <div class="sb-select-search">${icon('search')}<input type="text" placeholder="${esc(o.search)}" autocomplete="off" spellcheck="false"></div>
+        <div class="sb-select-list" role="listbox"></div>
+      </div>
+    </div>`;
+
+// options: [{ id, label, dot, count }]. Se la ricerca non trova quel nome esatto, propone di crearlo.
+function searchSelect(wrap, { options, currentId, empty, exists, onPick, onCreate }) {
+  const btn = $('.sb-select-btn', wrap), pop = $('.sb-select-pop', wrap);
+  const inp = $('input', pop), list = $('.sb-select-list', pop);
+  const fold = s => String(s).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  let items = [], hi = 0;
+  // evidenzia la prima corrispondenza (anche ignorando accenti e maiuscole)
+  const markFirst = (name, fq) => {
+    const i = fq ? fold(name).indexOf(fq) : -1;
+    if (i < 0 || fold(name).length !== name.length) return esc(name);
+    return esc(name.slice(0, i)) + `<mark>${esc(name.slice(i, i + fq.length))}</mark>` + esc(name.slice(i + fq.length));
+  };
+
+  const draw = () => {
+    const q = inp.value.trim(), fq = fold(cleanName(q));
+    items = options.filter(o => fold(o.label).includes(fq)).map(e => ({ e }));
+    if (q && !exists(q)) items.push({ create: cleanName(q) });
+    hi = Math.max(0, Math.min(hi, items.length - 1));
+    list.innerHTML = items.map((it, i) => it.e
+      ? `<div class="sb-opt ${i === hi ? 'hi' : ''} ${it.e.id === currentId ? 'sel' : ''}" role="option" data-i="${i}">
+          <span class="ellipsis">${markFirst(it.e.label, fq)}</span>
+          ${it.e.dot ? '<span class="dot" title="Ci sono cose da fare"></span>' : ''}
+          ${it.e.count != null ? `<span class="sb-opt-n">${it.e.count}</span>` : ''}</div>`
+      : `<div class="sb-opt create ${i === hi ? 'hi' : ''}" role="option" data-i="${i}">${icon('plus')}<span class="ellipsis">Crea “${esc(it.create)}”</span></div>`
+    ).join('') || `<div class="sb-opt-empty">${esc(empty)}</div>`;
+    list.querySelector('.hi')?.scrollIntoView({ block: 'nearest' });
+  };
+  const open = () => {
+    pop.classList.remove('hidden'); wrap.classList.add('open'); btn.setAttribute('aria-expanded', 'true');
+    inp.value = ''; hi = Math.max(0, options.findIndex(o => o.id === currentId));
+    draw(); inp.focus();
+    setTimeout(() => document.addEventListener('mousedown', outside), 0);
+  };
+  const close = () => {
+    pop.classList.add('hidden'); wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('mousedown', outside);
+  };
+  const outside = ev => { if (!wrap.isConnected) document.removeEventListener('mousedown', outside); else if (!wrap.contains(ev.target)) close(); };
+  const pick = i => {
+    const it = items[i];
+    if (!it) return;
+    close();
+    if (it.create) onCreate(it.create); else onPick(it.e.id);
+  };
+
+  btn.onclick = () => pop.classList.contains('hidden') ? open() : close();
+  inp.oninput = () => { hi = 0; draw(); };
+  inp.onkeydown = ev => {
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); hi = Math.min(hi + 1, items.length - 1); draw(); }
+    else if (ev.key === 'ArrowUp') { ev.preventDefault(); hi = Math.max(hi - 1, 0); draw(); }
+    else if (ev.key === 'Enter') { ev.preventDefault(); pick(hi); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); btn.focus(); }
+    else if (ev.key === 'Tab') close();
+  };
+  list.onmousedown = ev => ev.preventDefault();  // il campo di ricerca resta attivo
+  list.onclick = ev => { const o = ev.target.closest('[data-i]'); if (o) pick(Number(o.dataset.i)); };
+  list.onmousemove = ev => {
+    const o = ev.target.closest('[data-i]');
+    if (o && Number(o.dataset.i) !== hi) { hi = Number(o.dataset.i); list.querySelector('.hi')?.classList.remove('hi'); o.classList.add('hi'); }
   };
 }
 
@@ -342,14 +450,32 @@ document.addEventListener('submit', ev => {
 });
 
 /* ---------- azioni comuni ---------- */
+// ente con lo stesso nome (escluso, se indicato, quello che si sta rinominando)
+const entityByName = (name, exceptId) => S.entities.find(e => e.id !== exceptId && nameKey(e.name) === nameKey(name));
+
+let creatingEntity = false;
 async function createEntity(name) {
-  name = name.trim();
-  if (!name) return;
+  name = cleanName(name);
+  if (!name || creatingEntity) return;
+  const same = entityByName(name);
+  if (same) {
+    toast(`L’ente "${same.name}" esiste già: te lo apro`);
+    location.hash = `#/e/${same.id}`;
+    return;
+  }
+  creatingEntity = true;
   try {
     const e = await store.createEntity(name);
     S.entities.push(e); S.entities.sort(byName('name'));
     location.hash = `#/e/${e.id}`;
-  } catch (e) { toastErr(e); }
+  } catch (e) {
+    if (!isDuplicate(e)) return toastErr(e);
+    // creato nel frattempo da un altro dispositivo: ricarico e apro quello
+    await reloadAll();
+    const ex = entityByName(name);
+    toast(`L’ente "${ex?.name || name}" esiste già: te lo apro`);
+    if (ex) location.hash = `#/e/${ex.id}`; else render();
+  } finally { creatingEntity = false; }
 }
 
 async function createTopic(eid, title) {
@@ -398,9 +524,17 @@ document.addEventListener('click', async ev => {
     switch (el.dataset.act) {
       case 'menu': openDrawer(); break;
       case 'rename-entity': {
-        const name = await askText('Rinomina ente', ent.name);
+        const name = cleanName(await askText('Rinomina ente', ent.name));
         if (!name || name === ent.name) return;
-        Object.assign(ent, await store.updateEntity(ent.id, { name }));
+        const same = entityByName(name, ent.id);
+        if (same) { toast(`Esiste già un ente chiamato "${same.name}"`, 'err'); return; }
+        try {
+          Object.assign(ent, await store.updateEntity(ent.id, { name }));
+        } catch (e) {
+          if (!isDuplicate(e)) throw e;
+          await reloadAll(); render();
+          toast(`Esiste già un ente chiamato "${name}"`, 'err'); return;
+        }
         S.entities.sort(byName('name'));
         render(); break;
       }

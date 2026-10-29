@@ -8,6 +8,30 @@ create table if not exists public.entities (
   created_at timestamptz not null default now()
 );
 
+-- Niente enti doppi: due nomi uguali a meno di maiuscole e spazi sono lo stesso ente.
+-- Se ci sono già doppioni, i loro argomenti passano all'ente creato per primo
+-- e i doppioni (ormai vuoti) vengono eliminati. Nessuna nota va persa.
+do $$
+declare d record;
+begin
+  for d in
+    select id, first_value(id) over w as keep_id
+    from public.entities
+    window w as (partition by user_id, lower(btrim(regexp_replace(name, '\s+', ' ', 'g')))
+                 order by created_at, id)
+  loop
+    if d.id <> d.keep_id then
+      update public.topics set entity_id = d.keep_id where entity_id = d.id;
+      delete from public.entities where id = d.id;
+    end if;
+  end loop;
+exception when undefined_table then null;  -- prima installazione: tabella topics non ancora creata
+end $$;
+update public.entities set name = btrim(regexp_replace(name, '\s+', ' ', 'g'))
+  where name <> btrim(regexp_replace(name, '\s+', ' ', 'g'));
+create unique index if not exists entities_unique_name
+  on public.entities (user_id, lower(btrim(regexp_replace(name, '\s+', ' ', 'g'))));
+
 create table if not exists public.topics (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users on delete cascade,
