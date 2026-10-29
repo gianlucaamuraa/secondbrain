@@ -780,6 +780,9 @@ a.avatar:hover { filter: brightness(1.15); }
   .actions { flex-shrink: 0; }
   .tb-title { min-width: 0; }
   .tb-sub > a, .tb-sub > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .tb-sub > a:first-child { flex-shrink: 0; }
+  /* tabelle: parole intere, la tabella scorre al suo interno */
+  .note-body td, .note-body th, .editor td, .editor th { overflow-wrap: normal; word-break: normal; min-width: 90px; }
   .todo-row { min-width: 0; }
   .todo-path { flex-wrap: wrap; }
   .ptags { margin-left: 0; flex-wrap: wrap; }
