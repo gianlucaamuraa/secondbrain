@@ -95,7 +95,7 @@ const ICONS = {
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>'
 };
 const icon = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
-const brand = `<span class="logo">${icon('logo')}</span><span class="brand-name">Second Brain</span>`;
+const brand = `<span class="logo">${icon('logo')}</span><span class="brand-name">SecondBrainStep</span>`;
 const TINTS = ['blue', 'green', 'amber', 'violet', 'rose', 'teal'];
 const tintOf = s => TINTS[[...String(s)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % TINTS.length];
 
@@ -428,7 +428,7 @@ document.addEventListener('click', async ev => {
         const blob = new Blob([JSON.stringify({ exported_at: new Date().toISOString(), ...data }, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `secondbrain-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        a.download = `secondbrainstep-backup-${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         toast('Backup scaricato: contiene i testi delle note, gli allegati restano nell’archivio'); break;
       }

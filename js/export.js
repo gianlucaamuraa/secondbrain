@@ -220,7 +220,7 @@ window.SBExport = (() => {
     return {
       pageSize: 'A4',
       pageMargins: [40, 46, 40, 50],
-      info: { title, creator: 'Second Brain' },
+      info: { title, creator: 'SecondBrainStep' },
       defaultStyle: { fontSize: 10, lineHeight: 1.25, color: C.text },
       footer: (cur, total) => ({
         columns: [
@@ -337,7 +337,7 @@ window.SBExport = (() => {
       style: { paragraph: { indent: { left: 360 * (l + 1), hanging: 260 } } }
     }));
     return new D.Document({
-      creator: 'Second Brain',
+      creator: 'SecondBrainStep',
       title,
       styles: { default: { document: { run: { font: 'Calibri', size: 21, color: '0F172A' } } } },
       numbering: {

@@ -1,4 +1,4 @@
-# Second Brain
+# SecondBrainStep
 
 Diario di lavoro per enti e argomenti.
 

@@ -1,4 +1,4 @@
--- Second Brain: schema del database.
+-- SecondBrainStep: schema del database.
 -- Da eseguire una volta in Supabase > SQL Editor > New query > Run.
 
 create table if not exists public.entities (
